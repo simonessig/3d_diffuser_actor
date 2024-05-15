@@ -1,22 +1,20 @@
 """Online evaluation script on RLBench."""
-import random
-from typing import Tuple, Optional
-from pathlib import Path
+
 import json
 import os
+import random
+from pathlib import Path
+from typing import Optional, Tuple
 
-import torch
 import numpy as np
 import tap
+import torch
+from rlbench.environment import Environment
 
 from diffuser_actor.keypose_optimization.act3d import Act3D
 from diffuser_actor.trajectory_optimization.diffuser_actor import DiffuserActor
-from utils.common_utils import (
-    load_instructions,
-    get_gripper_loc_bounds,
-    round_floats
-)
-from utils.utils_with_rlbench import RLBenchEnv, Actioner, load_episodes
+from utils.common_utils import get_gripper_loc_bounds, load_instructions, round_floats
+from utils.utils_with_rlbench import Actioner, RLBenchEnv, load_episodes
 
 
 class Arguments(tap.Tap):
@@ -68,8 +66,8 @@ class Arguments(tap.Tap):
     embedding_dim: int = 120
     num_vis_ins_attn_layers: int = 2
     use_instruction: int = 1
-    rotation_parametrization: str = '6D'
-    quaternion_format: str = 'xyzw'
+    rotation_parametrization: str = "6D"
+    quaternion_format: str = "xyzw"
 
 
 def load_models(args):
@@ -82,10 +80,11 @@ def load_models(args):
         task = args.tasks[0]
     else:
         task = None
-    print('Gripper workspace')
+    print("Gripper workspace")
     gripper_loc_bounds = get_gripper_loc_bounds(
         args.gripper_loc_bounds_file,
-        task=task, buffer=args.gripper_loc_bounds_buffer,
+        task=task,
+        buffer=args.gripper_loc_bounds_buffer,
     )
 
     if args.test_model == "3d_diffuser_actor":
@@ -109,12 +108,9 @@ def load_models(args):
             backbone=args.backbone,
             image_size=tuple(int(x) for x in args.image_size.split(",")),
             embedding_dim=args.embedding_dim,
-            num_ghost_point_cross_attn_layers=(
-                args.num_ghost_point_cross_attn_layers),
-            num_query_cross_attn_layers=(
-                args.num_query_cross_attn_layers),
-            num_vis_ins_attn_layers=(
-                args.num_vis_ins_attn_layers),
+            num_ghost_point_cross_attn_layers=(args.num_ghost_point_cross_attn_layers),
+            num_query_cross_attn_layers=(args.num_query_cross_attn_layers),
+            num_vis_ins_attn_layers=(args.num_vis_ins_attn_layers),
             rotation_parametrization=args.rotation_parametrization,
             gripper_loc_bounds=gripper_loc_bounds,
             num_ghost_points=args.num_ghost_points,
@@ -122,11 +118,9 @@ def load_models(args):
             weight_tying=bool(args.weight_tying),
             gp_emb_tying=bool(args.gp_emb_tying),
             num_sampling_level=args.num_sampling_level,
-            fine_sampling_ball_diameter=(
-                args.fine_sampling_ball_diameter),
-            regress_position_offset=bool(
-                args.regress_position_offset),
-            use_instruction=bool(args.use_instruction)
+            fine_sampling_ball_diameter=(args.fine_sampling_ball_diameter),
+            regress_position_offset=bool(args.regress_position_offset),
+            use_instruction=bool(args.use_instruction),
         ).to(device)
     else:
         raise NotImplementedError
@@ -169,7 +163,7 @@ if __name__ == "__main__":
         apply_pc=True,
         headless=bool(args.headless),
         apply_cameras=args.cameras,
-        collision_checking=bool(args.collision_checking)
+        collision_checking=bool(args.collision_checking),
     )
 
     instruction = load_instructions(args.instructions)
@@ -181,7 +175,7 @@ if __name__ == "__main__":
         instructions=instruction,
         apply_cameras=args.cameras,
         action_dim=args.action_dim,
-        predict_trajectory=bool(args.predict_trajectory)
+        predict_trajectory=bool(args.predict_trajectory),
     )
     max_eps_dict = load_episodes()["max_episode_length"]
     task_success_rates = {}
@@ -190,8 +184,7 @@ if __name__ == "__main__":
         var_success_rates = env.evaluate_task_on_multiple_variations(
             task_str,
             max_steps=(
-                max_eps_dict[task_str] if args.max_steps == -1
-                else args.max_steps
+                max_eps_dict[task_str] if args.max_steps == -1 else args.max_steps
             ),
             num_variations=args.variations[-1] + 1,
             num_demos=args.num_episodes,
@@ -200,17 +193,11 @@ if __name__ == "__main__":
             dense_interpolation=bool(args.dense_interpolation),
             interpolation_length=args.interpolation_length,
             verbose=bool(args.verbose),
-            num_history=args.num_history
+            num_history=args.num_history,
         )
         print()
-        print(
-            f"{task_str} variation success rates:",
-            round_floats(var_success_rates)
-        )
-        print(
-            f"{task_str} mean success rate:",
-            round_floats(var_success_rates["mean"])
-        )
+        print(f"{task_str} variation success rates:", round_floats(var_success_rates))
+        print(f"{task_str} mean success rate:", round_floats(var_success_rates["mean"]))
 
         task_success_rates[task_str] = var_success_rates
         with open(args.output_file, "w") as f:
