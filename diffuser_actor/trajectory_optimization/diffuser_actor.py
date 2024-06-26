@@ -41,6 +41,7 @@ class DiffuserActor(nn.Module):
         nhist=3,
         relative=False,
         lang_enhanced=False,
+        ig=None,
     ):
         super().__init__()
         self._rotation_parametrization = rotation_parametrization
@@ -75,16 +76,13 @@ class DiffuserActor(nn.Module):
         )
         self.n_steps = diffusion_timesteps
         self.gripper_loc_bounds = torch.tensor(gripper_loc_bounds)
+        self.ig = ig
 
     def encode_inputs(self, visible_rgb, visible_pcd, instruction, curr_gripper):
         # Compute visual features/positional embeddings at different scales
-        rgb_feats_pyramid, pcd_pyramid = self.encoder.encode_images(
-            visible_rgb, visible_pcd
-        )
+        rgb_feats_pyramid, pcd_pyramid = self.encoder.encode_images(visible_rgb, visible_pcd)
         # Keep only low-res scale
-        context_feats = einops.rearrange(
-            rgb_feats_pyramid[0], "b ncam c h w -> b (ncam h w) c"
-        )
+        context_feats = einops.rearrange(rgb_feats_pyramid[0], "b ncam c h w -> b (ncam h w) c")
         context = pcd_pyramid[0]
 
         # Encode instruction (B, 53, F)
@@ -95,9 +93,7 @@ class DiffuserActor(nn.Module):
         # Cross-attention vision to language
         if self.use_instruction:
             # Attention from vision to language
-            context_feats = self.encoder.vision_language_attention(
-                context_feats, instr_feats
-            )
+            context_feats = self.encoder.vision_language_attention(context_feats, instr_feats)
 
         # Encode gripper history (B, nhist, F)
         adaln_gripper_feats, _ = self.encoder.encode_curr_gripper(
@@ -173,6 +169,10 @@ class DiffuserActor(nn.Module):
                 fixed_inputs,
             )
             out = out[-1]  # keep only last layer's output
+
+            if self.ig is not None:
+                out = self.ig.apply(out, trajectory)
+
             pos = self.position_noise_scheduler.step(
                 out[..., :3], t, trajectory[..., :3]
             ).prev_sample
@@ -185,9 +185,7 @@ class DiffuserActor(nn.Module):
 
         return trajectory
 
-    def compute_trajectory(
-        self, trajectory_mask, rgb_obs, pcd_obs, instruction, curr_gripper
-    ):
+    def compute_trajectory(self, trajectory_mask, rgb_obs, pcd_obs, instruction, curr_gripper):
         # Normalize all pos
         pcd_obs = pcd_obs.clone()
         curr_gripper = curr_gripper.clone()
@@ -371,9 +369,9 @@ class DiffuserActor(nn.Module):
         for layer_pred in pred:
             trans = layer_pred[..., :3]
             rot = layer_pred[..., 3:9]
-            loss = 30 * F.l1_loss(
-                trans, noise[..., :3], reduction="mean"
-            ) + 10 * F.l1_loss(rot, noise[..., 3:9], reduction="mean")
+            loss = 30 * F.l1_loss(trans, noise[..., :3], reduction="mean") + 10 * F.l1_loss(
+                rot, noise[..., 3:9], reduction="mean"
+            )
             if torch.numel(gt_openess) > 0:
                 openess = layer_pred[..., 9:]
                 loss += F.binary_cross_entropy_with_logits(openess, gt_openess)
@@ -607,9 +605,7 @@ class DiffusionHead(nn.Module):
         num_gripper = gripper_features.shape[0]
 
         # Rotation head
-        rotation = self.predict_rot(
-            features, rel_pos, time_embs, num_gripper, instr_feats
-        )
+        rotation = self.predict_rot(features, rel_pos, time_embs, num_gripper, instr_feats)
 
         # Position head
         position, position_features = self.predict_pos(
@@ -633,9 +629,7 @@ class DiffusionHead(nn.Module):
         """
         time_feats = self.time_emb(timestep)
 
-        curr_gripper_features = einops.rearrange(
-            curr_gripper_features, "npts b c -> b npts c"
-        )
+        curr_gripper_features = einops.rearrange(curr_gripper_features, "npts b c -> b npts c")
         curr_gripper_features = curr_gripper_features.flatten(1)
         curr_gripper_feats = self.curr_gripper_emb(curr_gripper_features)
         return time_feats + curr_gripper_feats

@@ -13,6 +13,7 @@ from rlbench.environment import Environment
 
 from diffuser_actor.keypose_optimization.act3d import Act3D
 from diffuser_actor.trajectory_optimization.diffuser_actor import DiffuserActor
+from online_evaluation_rlbench.ig import InteractiveGuidance
 from utils.common_utils import get_gripper_loc_bounds, load_instructions, round_floats
 from utils.utils_with_rlbench import Actioner, RLBenchEnv, load_episodes
 
@@ -87,6 +88,8 @@ def load_models(args):
         buffer=args.gripper_loc_bounds_buffer,
     )
 
+    ig = InteractiveGuidance(device)
+
     if args.test_model == "3d_diffuser_actor":
         model = DiffuserActor(
             backbone=args.backbone,
@@ -102,7 +105,8 @@ def load_models(args):
             nhist=args.num_history,
             relative=bool(args.relative_action),
             lang_enhanced=bool(args.lang_enhanced),
-        )
+            ig=ig,
+        ).to(device)
     elif args.test_model == "act3d":
         model = Act3D(
             backbone=args.backbone,
