@@ -1,29 +1,13 @@
-import copy
+import random
 
 import numpy as np
-import open3d as o3d
-
-# import pybullet as pb
 import pyrealsense2
 import torch
+import torch.nn.functional as F
 from matplotlib import pyplot as plt
 from scipy.signal import argrelextrema
 
 import utils.pytorch3d_transforms as pytorch3d_transforms
-
-# def get_eef_velocity_from_robot(robot: Robot):
-#     eef_vel = []
-#     for i in range(2):
-#         eef_vel.append(
-#             pb.getJointState(
-#                 robot.robot_uid, robot.gripper_joint_ids[i], physicsClientId=robot.cid
-#             )[1]
-#         )
-
-#     # mean over the two gripper points.
-#     vel = sum(eef_vel) / len(eef_vel)
-
-#     return vel
 
 
 def get_eef_velocity_from_trajectories(trajectories):
@@ -110,13 +94,6 @@ def get_cam_info(calib):
     intrinsics.coeffs = calib["intrinsics"]["coeffs"]
     intrinsics.model = pyrealsense2.distortion.inverse_brown_conrady
 
-    # view = np.zeros((4, 4))
-    # view[:3, :3] = -np.array(cam_ori)
-    # view[:3, 3] = np.array(cam_pos)
-    # view[3, 3] = 1.0
-    # inv_view = np.linalg.inv(view)
-    # print(calib)
-
     extrinsics = np.zeros((4, 4))
     extrinsics[:3, :3] = np.array(calib["camera_base_ori"]).T
     extrinsics[:3, 3] = -np.array(calib["camera_base_pos"])
@@ -163,62 +140,7 @@ def viz_pcd(pcd, cam_pos=None):
     fig = plt.figure(figsize=(8, 8))
     ax = fig.add_subplot(111, projection="3d")
     ax.scatter(x, y, z)
-    # ax.scatter(cam_pos, c="red")
     plt.show()
-
-
-# def deproject(depth_img, inv_view_mat, fx, fy, ppx, ppy):
-#     """
-#     Deprojects a pixel point to 3D coordinates
-#     Args
-#         depth_img: np.array; depth image used as reference to generate 3D coordinates
-#     Output
-#         (x, y, z): (3, npts) np.array; world coordinates of the deprojected point
-#     """
-#     # intrinsics = o3d.camera.PinholeCameraIntrinsic(640, 480, args.fx, args.fy, args.ppx, args.ppy)
-#     # rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-#     #     color, depth_img, convert_rgb_to_intensity=False
-#     # )
-#     # pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics)
-
-#     # return o3d.geometry.create_point_cloud_from_depth_image(depth_img, intrinsics)
-
-#     h, w = depth_img.shape
-#     u, v = np.meshgrid(np.arange(w), np.arange(h))
-#     u, v = u.ravel(), v.ravel()
-#     # print(u)
-#     z = depth_img[v, u] / 1000
-#     # print(z)
-
-#     # fx = 640 / (2 * np.tan(np.deg2rad(87) / 2))
-#     # fy = 480 / (2 * np.tan(np.deg2rad(58) / 2))
-#     # x = (u - 640 // 2) * z / fx
-#     # y = -(v - 480 // 2) * z / fy
-
-#     # fx = fx / 10
-#     # fy = fy / 10
-#     # ppx = ppx / 1000
-#     # ppy = ppy / 1000
-
-#     x = (u - ppx) * z / fx
-#     y = (v - ppy) * z / fy
-#     # z = -z
-#     # print(x, y, z)
-#     # return
-#     ones = np.ones_like(z)
-
-#     # ones = np.ones_like(x)
-#     # pix_hom = np.stack([u, v, ones])
-#     # x, y, _, _ = inv_view_mat @ pix_hom
-
-#     # z = -depth_img[v, u]
-#     cam_pos = np.stack([x, y, z, ones], axis=0)
-#     print(cam_pos)
-
-
-#     world_pos = inv_view_mat @ cam_pos
-#     # world_pos = cam_pos
-#     return world_pos[:3]
 
 
 def angle_between_angles(a, b):
@@ -254,3 +176,133 @@ def to_relative_action(actions, robot_obs, max_pos=1.0, max_orn=1.0, clip=True):
 
     gripper = actions[..., -1:]
     return np.concatenate([rel_pos, rel_orn, gripper])
+
+
+class Actioner:
+
+    def __init__(
+        self,
+        policy=None,
+        instructions=None,
+        apply_cameras=("left_shoulder", "right_shoulder", "wrist"),
+        action_dim=7,
+        predict_trajectory=True,
+    ):
+        self._policy = policy
+        self._instructions = instructions
+        self._apply_cameras = apply_cameras
+        self._action_dim = action_dim
+        self._predict_trajectory = predict_trajectory
+
+        self._actions = {}
+        self._instr = None
+        self._task_str = None
+
+        self._policy.eval()
+
+    def load_episode(self, task_str, variation):
+        self._task_str = task_str
+        instructions = list(self._instructions[task_str][variation])
+        self._instr = random.choice(instructions).unsqueeze(0)
+        # self._task_id = torch.tensor(TASK_TO_ID[task_str]).unsqueeze(0)
+        self._actions = {}
+
+    def get_action_from_demo(self, demo):
+        """
+        Fetch the desired state and action based on the provided demo.
+            :param demo: fetch each demo and save key-point observations
+            :return: a list of obs and action
+        """
+        key_frame = keypoint_discovery(demo)
+
+        action_ls = []
+        trajectory_ls = []
+        for i in range(len(key_frame)):
+            obs = demo[key_frame[i]]
+            action_np = np.concatenate([obs.gripper_pose, [obs.gripper_open]])
+            action = torch.from_numpy(action_np)
+            action_ls.append(action.unsqueeze(0))
+
+            trajectory_np = []
+            for j in range(key_frame[i - 1] if i > 0 else 0, key_frame[i]):
+                obs = demo[j]
+                trajectory_np.append(np.concatenate([obs.gripper_pose, [obs.gripper_open]]))
+            trajectory_ls.append(np.stack(trajectory_np))
+
+        trajectory_mask_ls = [
+            torch.zeros(1, key_frame[i] - (key_frame[i - 1] if i > 0 else 0)).bool()
+            for i in range(len(key_frame))
+        ]
+
+        return action_ls, trajectory_ls, trajectory_mask_ls
+
+    def predict(self, rgbs, pcds, gripper, interpolation_length=None):
+        """
+        Args:
+            rgbs: (bs, num_hist, num_cameras, 3, H, W)
+            pcds: (bs, num_hist, num_cameras, 3, H, W)
+            gripper: (B, nhist, output_dim)
+            interpolation_length: an integer
+
+        Returns:
+            {"action": torch.Tensor, "trajectory": torch.Tensor}
+        """
+        output = {"action": None, "trajectory": None}
+
+        rgbs = rgbs / 2 + 0.5  # in [0, 1]
+
+        if self._instr is None:
+            raise ValueError()
+
+        self._instr = self._instr.to(rgbs.device)
+        # self._task_id = self._task_id.to(rgbs.device)
+
+        # Predict trajectory
+        if self._predict_trajectory:
+            print("Predict Trajectory")
+            fake_traj = torch.full([1, interpolation_length - 1, gripper.shape[-1]], 0).to(
+                rgbs.device
+            )
+            traj_mask = torch.full([1, interpolation_length - 1], False).to(rgbs.device)
+            output["trajectory"] = self._policy(
+                fake_traj,
+                traj_mask,
+                rgbs[:, -1],
+                pcds[:, -1],
+                self._instr,
+                gripper[..., :7],
+                run_inference=True,
+            )
+        else:
+            print("Predict Keypose")
+            pred = self._policy(
+                rgbs[:, -1],
+                pcds[:, -1],
+                self._instr,
+                gripper[:, -1, : self._action_dim],
+            )
+            # Hackish, assume self._policy is an instance of Act3D
+            output["action"] = self._policy.prepare_action(pred)
+
+        return output
+
+    @property
+    def device(self):
+        return next(self._policy.parameters()).device
+
+
+def obs_to_attn(obs, camera):
+    extrinsics_44 = torch.from_numpy(obs.misc[f"{camera}_camera_extrinsics"]).float()
+    extrinsics_44 = torch.linalg.inv(extrinsics_44)
+    intrinsics_33 = torch.from_numpy(obs.misc[f"{camera}_camera_intrinsics"]).float()
+    intrinsics_34 = F.pad(intrinsics_33, (0, 1, 0, 0))
+    gripper_pos_3 = torch.from_numpy(obs.gripper_pose[:3]).float()
+    gripper_pos_41 = F.pad(gripper_pos_3, (0, 1), value=1).unsqueeze(1)
+    points_cam_41 = extrinsics_44 @ gripper_pos_41
+
+    proj_31 = intrinsics_34 @ points_cam_41
+    proj_3 = proj_31.float().squeeze(1)
+    u = int((proj_3[0] / proj_3[2]).round())
+    v = int((proj_3[1] / proj_3[2]).round())
+
+    return u, v
