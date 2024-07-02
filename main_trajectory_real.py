@@ -9,16 +9,12 @@ import torch
 import torch.optim as optim
 from matplotlib import pyplot as plt
 
+import wandb
 from datasets.dataset_real import RealDataset
 from main_trajectory import Arguments
 from main_trajectory import TrainTester as BaseTrainTester
 from main_trajectory import fig_to_numpy, traj_collate_fn
 from utils.common_utils import get_gripper_loc_bounds
-
-
-def load_instructions(instructions, split):
-    instructions = pickle.load(open(f"{instructions}/{split}.pkl", "rb"))["embeddings"]
-    return instructions
 
 
 class TrainTester(BaseTrainTester):
@@ -31,8 +27,8 @@ class TrainTester(BaseTrainTester):
     def get_datasets(self):
         """Initialize datasets."""
         # Load instruction, based on which we load tasks/variations
-        train_instruction = None  # load_instructions(self.args.instructions, "training")
-        test_instruction = None  # load_instructions(self.args.instructions, "validation")
+        train_instruction = None
+        test_instruction = None
         taskvar = [
             ("pick_box", 0),
         ]
@@ -181,7 +177,10 @@ if __name__ == "__main__":
     args.log_dir = log_dir
     log_dir.mkdir(exist_ok=True, parents=True)
     print("Logging:", log_dir)
-    print("Available devices (CUDA_VISIBLE_DEVICES):", os.environ.get("CUDA_VISIBLE_DEVICES"))
+    print(
+        "Available devices (CUDA_VISIBLE_DEVICES):",
+        os.environ.get("CUDA_VISIBLE_DEVICES"),
+    )
     print("Device count", torch.cuda.device_count())
     args.local_rank = int(os.environ["LOCAL_RANK"])
 
@@ -189,6 +188,12 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
+
+    wandb.init(
+        project=args.wandb_project,
+        group=args.wandb_group,
+        config=args,
+    )
 
     # DDP initialization
     torch.cuda.set_device(args.local_rank)
@@ -200,3 +205,5 @@ if __name__ == "__main__":
     # Run
     train_tester = TrainTester(args)
     train_tester.main(collate_fn=traj_collate_fn)
+
+    wandb.finish()

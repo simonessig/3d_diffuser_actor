@@ -1,15 +1,9 @@
-import itertools
 import json
-import os
 import pickle
-import random
-from pathlib import Path, PosixPath
-from typing import Dict, List, Tuple
+from pathlib import Path
 
 import blosc
 import cv2
-import einops
-import matplotlib.pyplot as plt
 import numpy as np
 import tap
 import torch
@@ -17,7 +11,7 @@ from PIL import Image
 from scipy.spatial.transform import Rotation
 from tqdm import tqdm
 
-from utils.utils_with_real import deproject, get_cam_info, keypoint_discovery, viz_pcd
+from utils.utils_with_real import deproject, get_cam_info, keypoint_discovery
 
 
 class Arguments(tap.Tap):
@@ -93,11 +87,6 @@ def load_episode(root_dir, episode, datas, args, cam_info):
             axis=-1,
         )
     )
-    # print(proprio.shape)
-
-    # print(np.array(rgb).shape)
-    # print(pcd.shape)
-    # print(proprio.shape)
 
     # Put them into a dict
     # datas["pcd"].append(*pcd)  # (*img_dim, 3)
@@ -107,10 +96,6 @@ def load_episode(root_dir, episode, datas, args, cam_info):
     datas["rgb"] += rgb  # (*img_dim, 3)
     datas["proprios"] += proprio  # (7,)
     # datas["annotation_id"].append(ann_id)  # int
-
-    # print(np.array(datas["pcd"]).shape)
-    # print(np.array(datas["rgb"]).shape)
-    # print(np.array(datas["proprios"]).shape)
 
     return datas
 
@@ -141,15 +126,21 @@ def process_datas(datas, keyframe_inds):
     rgb = np.array(datas["rgb"])[:, None]  # (traj_len, H, W, 3)
     rgb_pcd = np.stack([rgb, pcd], axis=2)  # (traj_len, ncam, 2, H, W, 3)])
     rgb_pcd = rgb_pcd.transpose(0, 1, 2, 5, 3, 4)  # (traj_len, ncam, 2, 3, H, W)
-    rgb_pcd = torch.as_tensor(rgb_pcd, dtype=torch.float32)  # (traj_len, ncam, 2, 3, H, W)
+    rgb_pcd = torch.as_tensor(
+        rgb_pcd, dtype=torch.float32
+    )  # (traj_len, ncam, 2, 3, H, W)
 
     # prepare keypose actions
     keyframe_indices = torch.as_tensor(keyframe_inds)[None, :]
     gripper_indices = torch.arange(len(datas["proprios"])).view(-1, 1)
-    action_indices = torch.argmax((gripper_indices < keyframe_indices).float(), dim=1).tolist()
+    action_indices = torch.argmax(
+        (gripper_indices < keyframe_indices).float(), dim=1
+    ).tolist()
     action_indices[-1] = len(keyframe_inds) - 1
     actions = [datas["proprios"][keyframe_inds[i]] for i in action_indices]
-    action_tensors = [torch.as_tensor(a, dtype=torch.float32).view(1, -1) for a in actions]
+    action_tensors = [
+        torch.as_tensor(a, dtype=torch.float32).view(1, -1) for a in actions
+    ]
 
     # prepare camera_dicts
     camera_dicts = [{"front": (0, 0)}]

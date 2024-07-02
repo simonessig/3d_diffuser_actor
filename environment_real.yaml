@@ -1,0 +1,94 @@
+name: 3d_diffuser_actor_real
+channels:
+  - pytorch
+  - nvidia
+  - fair-robotics
+  - conda-forge
+  - defaults
+dependencies:
+  # Build dependencies
+  - assimp=5.0.1=hdca8b6f_4
+  - cmake
+  - doxygen
+  - eigen=3.3.9
+  - grpc-cpp=1.41.1
+  - hpp-fcl=1.6.0
+  - libprotobuf=3.18.1
+  - mkl-include ==2022.0.1
+  - mkl==2024.0.0
+  - openmpi=2.1.2
+  - pinocchio ==2.5.2
+  - poco ==1.9.0 # needed by libfranka
+  - python ==3.9
+  - pytorch=2.0.1=py3.9_cuda11.8_cudnn8.7.0_0
+  - torchvision
+  - pytorch-cuda=11.8
+  - urdfdom=2.3.3=hc9558a2_0
+  - urdfdom_headers=1.0.5=hc9558a2_2
+  - yaml-cpp ==0.6.3
+
+  # Run dependencies
+  - asv
+  - black
+  - boost ==1.72.0
+  - boost-cpp ==1.72.0
+  - breathe
+  - dash
+  - grpcio ==1.46.0
+  - mujoco
+  - hydra-core ==1.0.6
+  - importlib-resources ==5.7.1
+  - myst-parser
+  - numpy
+  - pandas
+  - plotly
+  - pip
+  - protobuf ==3.18.1
+  - pybullet ==3.17
+  - pymodbus ==2.5.3
+  - pyserial
+  - pytest
+  - pytest-benchmark=4.0.0
+  - scipy
+  - spdlog=1.10.0=h924138e_0
+  - sphinx
+  - sphinx-copybutton
+  - sphinx-book-theme
+  - tqdm
+
+  # - python=3.8
+  - pip
+  # - pytorch=1.13.1
+  # - torchvision=0.14.1
+  # - torchaudio=0.13.1
+  # - pytorch-cuda=11.6
+  - pip:
+    - git+https://github.com/openai/CLIP.git
+    - numpy==1.23.5
+    - pillow
+    - einops
+    - typed-argument-parser
+    - transformers
+    - absl-py
+    - matplotlib
+    - scipy
+    - tensorboard
+    - opencv-python
+    - blosc
+    - setuptools==57.5.0
+    - beautifulsoup4
+    - bleach>=6.0.0
+    - defusedxml
+    - jinja2>=3.0
+    - jupyter-core>=4.7
+    - jupyterlab-pygments
+    - mistune==2.0.5
+    - nbclient>=0.5.0
+    - nbformat>=5.7
+    - pandocfilters>=1.4.1
+    - tinycss2
+    - traitlets>=5.1
+    - pyrealsense2
+    - open3d
+    - packaging
+    - pydantic

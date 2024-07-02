@@ -2,24 +2,26 @@
 
 import io
 import os
-from pathlib import Path
 import random
-from typing import Tuple, Optional
+from pathlib import Path
+from typing import Optional, Tuple
 
 import cv2
-from matplotlib import pyplot as plt
 import numpy as np
 import tap
 import torch
 import torch.distributed as dist
+from matplotlib import pyplot as plt
 from torch.nn import functional as F
 
+import wandb
 from datasets.dataset_engine import RLBenchDataset
-from engine import BaseTrainTester
 from diffuser_actor import DiffuserActor
-
+from engine import BaseTrainTester
 from utils.common_utils import (
-    load_instructions, count_parameters, get_gripper_loc_bounds
+    count_parameters,
+    get_gripper_loc_bounds,
+    load_instructions,
 )
 
 
@@ -69,14 +71,17 @@ class Arguments(tap.Tap):
     embedding_dim: int = 120
     num_vis_ins_attn_layers: int = 2
     use_instruction: int = 0
-    rotation_parametrization: str = 'quat'
-    quaternion_format: str = 'wxyz'
+    rotation_parametrization: str = "quat"
+    quaternion_format: str = "wxyz"
     diffusion_timesteps: int = 100
     keypose_only: int = 0
     num_history: int = 0
     relative_action: int = 0
     lang_enhanced: int = 0
     fps_subsampling_factor: int = 5
+
+    wandb_project: str = None
+    wandb_group: str = None
 
 
 class TrainTester(BaseTrainTester):
@@ -92,7 +97,7 @@ class TrainTester(BaseTrainTester):
         instruction = load_instructions(
             self.args.instructions,
             tasks=self.args.tasks,
-            variations=self.args.variations
+            variations=self.args.variations,
         )
         if instruction is None:
             raise NotImplementedError()
@@ -114,12 +119,10 @@ class TrainTester(BaseTrainTester):
             num_iters=self.args.train_iters,
             cameras=self.args.cameras,
             training=True,
-            image_rescale=tuple(
-                float(x) for x in self.args.image_rescale.split(",")
-            ),
+            image_rescale=tuple(float(x) for x in self.args.image_rescale.split(",")),
             return_low_lvl_trajectory=True,
             dense_interpolation=bool(self.args.dense_interpolation),
-            interpolation_length=self.args.interpolation_length
+            interpolation_length=self.args.interpolation_length,
         )
         test_dataset = RLBenchDataset(
             root=self.args.valset,
@@ -130,12 +133,10 @@ class TrainTester(BaseTrainTester):
             max_episodes_per_task=self.args.max_episodes_per_task,
             cameras=self.args.cameras,
             training=False,
-            image_rescale=tuple(
-                float(x) for x in self.args.image_rescale.split(",")
-            ),
+            image_rescale=tuple(float(x) for x in self.args.image_rescale.split(",")),
             return_low_lvl_trajectory=True,
             dense_interpolation=bool(self.args.dense_interpolation),
-            interpolation_length=self.args.interpolation_length
+            interpolation_length=self.args.interpolation_length,
         )
         return train_dataset, test_dataset
 
@@ -155,7 +156,7 @@ class TrainTester(BaseTrainTester):
             diffusion_timesteps=self.args.diffusion_timesteps,
             nhist=self.args.num_history,
             relative=bool(self.args.relative_action),
-            lang_enhanced=bool(self.args.lang_enhanced)
+            lang_enhanced=bool(self.args.lang_enhanced),
         )
         print("Model parameters:", count_parameters(_model))
 
@@ -179,8 +180,9 @@ class TrainTester(BaseTrainTester):
 
         # Forward pass
         curr_gripper = (
-            sample["curr_gripper"] if self.args.num_history < 1
-            else sample["curr_gripper_history"][:, -self.args.num_history:]
+            sample["curr_gripper"]
+            if self.args.num_history < 1
+            else sample["curr_gripper_history"][:, -self.args.num_history :]
         )
         out = model(
             sample["trajectory"],
@@ -188,7 +190,7 @@ class TrainTester(BaseTrainTester):
             sample["rgbs"],
             sample["pcds"],
             sample["instr"],
-            curr_gripper
+            curr_gripper,
         )
 
         # Backward pass
@@ -196,7 +198,10 @@ class TrainTester(BaseTrainTester):
         loss.backward()
 
         # Update
-        if step_id % self.args.accumulate_grad_batches == self.args.accumulate_grad_batches - 1:
+        if (
+            step_id % self.args.accumulate_grad_batches
+            == self.args.accumulate_grad_batches - 1
+        ):
             optimizer.step()
 
         # Log
@@ -205,8 +210,9 @@ class TrainTester(BaseTrainTester):
             self.writer.add_scalar("train-loss/noise_mse", loss, step_id)
 
     @torch.no_grad()
-    def evaluate_nsteps(self, model, criterion, loader, step_id, val_iters,
-                        split='val'):
+    def evaluate_nsteps(
+        self, model, criterion, loader, step_id, val_iters, split="val"
+    ):
         """Run a given number of evaluation steps."""
         if self.args.val_iters != -1:
             val_iters = self.args.val_iters
@@ -226,8 +232,9 @@ class TrainTester(BaseTrainTester):
                 sample["trajectory_mask"] = sample["trajectory_mask"][:, 1:]
 
             curr_gripper = (
-                sample["curr_gripper"] if self.args.num_history < 1
-                else sample["curr_gripper_history"][:, -self.args.num_history:]
+                sample["curr_gripper"]
+                if self.args.num_history < 1
+                else sample["curr_gripper_history"][:, -self.args.num_history :]
             )
             action = model(
                 sample["trajectory"].to(device),
@@ -236,12 +243,12 @@ class TrainTester(BaseTrainTester):
                 sample["pcds"].to(device),
                 sample["instr"].to(device),
                 curr_gripper.to(device),
-                run_inference=True
+                run_inference=True,
             )
             losses, losses_B = criterion.compute_metrics(
                 action,
                 sample["trajectory"].to(device),
-                sample["trajectory_mask"].to(device)
+                sample["trajectory_mask"].to(device),
             )
 
             # Gather global statistics
@@ -263,11 +270,11 @@ class TrainTester(BaseTrainTester):
 
             # Generate visualizations
             if i == 0 and dist.get_rank() == 0 and step_id > -1:
-                viz_key = f'{split}-viz/viz'
+                viz_key = f"{split}-viz/viz"
                 viz = generate_visualizations(
                     action,
                     sample["trajectory"].to(device),
-                    sample["trajectory_mask"].to(device)
+                    sample["trajectory_mask"].to(device),
                 )
                 self.writer.add_image(viz_key, viz, step_id)
 
@@ -279,30 +286,35 @@ class TrainTester(BaseTrainTester):
                 for key, val in values.items():
                     self.writer.add_scalar(key, val, step_id)
 
-            # Also log to terminal
-            print(f"Step {step_id}:")
-            for key, value in values.items():
-                print(f"{key}: {value:.03f}")
+            wandb.log(values)
 
-        return values.get('val-losses/traj_pos_acc_001', None)
+        return values.get("val-losses/traj_pos_acc_001", None)
 
 
 def traj_collate_fn(batch):
     keys = [
-        "trajectory", "trajectory_mask",
-        "rgbs", "pcds",
-        "curr_gripper", "curr_gripper_history", "action", "instr"
+        "trajectory",
+        "trajectory_mask",
+        "rgbs",
+        "pcds",
+        "curr_gripper",
+        "curr_gripper_history",
+        "action",
+        "instr",
     ]
     ret_dict = {
-        key: torch.cat([
-            item[key].float() if key != 'trajectory_mask' else item[key]
-            for item in batch
-        ]) for key in keys
+        key: torch.cat(
+            [
+                item[key].float() if key != "trajectory_mask" else item[key]
+                for item in batch
+            ]
+        )
+        for key in keys
     }
 
     ret_dict["task"] = []
     for item in batch:
-        ret_dict["task"] += item['task']
+        ret_dict["task"] += item["task"]
     return ret_dict
 
 
@@ -314,7 +326,7 @@ class TrajectoryCriterion:
     def compute_loss(self, pred, gt=None, mask=None, is_loss=True):
         if not is_loss:
             assert gt is not None and mask is not None
-            return self.compute_metrics(pred, gt, mask)[0]['action_mse']
+            return self.compute_metrics(pred, gt, mask)[0]["action_mse"]
         return pred
 
     @staticmethod
@@ -325,24 +337,24 @@ class TrajectoryCriterion:
         quat_l1 = (pred[..., 3:7] - gt[..., 3:7]).abs().sum(-1)
         quat_l1_ = (pred[..., 3:7] + gt[..., 3:7]).abs().sum(-1)
         select_mask = (quat_l1 < quat_l1_).float()
-        quat_l1 = (select_mask * quat_l1 + (1 - select_mask) * quat_l1_)
+        quat_l1 = select_mask * quat_l1 + (1 - select_mask) * quat_l1_
         # gripper openess
         openess = ((pred[..., 7:] >= 0.5) == (gt[..., 7:] > 0.0)).bool()
-        tr = 'traj_'
+        tr = "traj_"
 
         # Trajectory metrics
         ret_1, ret_2 = {
-            tr + 'action_mse': F.mse_loss(pred, gt),
-            tr + 'pos_l2': pos_l2.mean(),
-            tr + 'pos_acc_001': (pos_l2 < 0.01).float().mean(),
-            tr + 'rot_l1': quat_l1.mean(),
-            tr + 'rot_acc_0025': (quat_l1 < 0.025).float().mean(),
-            tr + 'gripper': openess.flatten().float().mean()
+            tr + "action_mse": F.mse_loss(pred, gt),
+            tr + "pos_l2": pos_l2.mean(),
+            tr + "pos_acc_001": (pos_l2 < 0.01).float().mean(),
+            tr + "rot_l1": quat_l1.mean(),
+            tr + "rot_acc_0025": (quat_l1 < 0.025).float().mean(),
+            tr + "gripper": openess.flatten().float().mean(),
         }, {
-            tr + 'pos_l2': pos_l2.mean(-1),
-            tr + 'pos_acc_001': (pos_l2 < 0.01).float().mean(-1),
-            tr + 'rot_l1': quat_l1.mean(-1),
-            tr + 'rot_acc_0025': (quat_l1 < 0.025).float().mean(-1)
+            tr + "pos_l2": pos_l2.mean(-1),
+            tr + "pos_acc_001": (pos_l2 < 0.01).float().mean(-1),
+            tr + "rot_l1": quat_l1.mean(-1),
+            tr + "rot_acc_0025": (quat_l1 < 0.025).float().mean(-1),
         }
 
         # Keypose metrics
@@ -350,19 +362,23 @@ class TrajectoryCriterion:
         quat_l1 = (pred[:, -1, 3:7] - gt[:, -1, 3:7]).abs().sum(-1)
         quat_l1_ = (pred[:, -1, 3:7] + gt[:, -1, 3:7]).abs().sum(-1)
         select_mask = (quat_l1 < quat_l1_).float()
-        quat_l1 = (select_mask * quat_l1 + (1 - select_mask) * quat_l1_)
-        ret_1.update({
-            'pos_l2_final': pos_l2.mean(),
-            'pos_l2_final<0.01': (pos_l2 < 0.01).float().mean(),
-            'rot_l1': quat_l1.mean(),
-            'rot_l1<0025': (quat_l1 < 0.025).float().mean()
-        })
-        ret_2.update({
-            'pos_l2_final': pos_l2,
-            'pos_l2_final<0.01': (pos_l2 < 0.01).float(),
-            'rot_l1': quat_l1,
-            'rot_l1<0.025': (quat_l1 < 0.025).float(),
-        })
+        quat_l1 = select_mask * quat_l1 + (1 - select_mask) * quat_l1_
+        ret_1.update(
+            {
+                "pos_l2_final": pos_l2.mean(),
+                "pos_l2_final<0.01": (pos_l2 < 0.01).float().mean(),
+                "rot_l1": quat_l1.mean(),
+                "rot_l1<0025": (quat_l1 < 0.025).float().mean(),
+            }
+        )
+        ret_2.update(
+            {
+                "pos_l2_final": pos_l2,
+                "pos_l2_final<0.01": (pos_l2 < 0.01).float(),
+                "rot_l1": quat_l1,
+                "rot_l1<0.025": (quat_l1 < 0.025).float(),
+            }
+        )
 
         return ret_1, ret_2
 
@@ -384,14 +400,16 @@ def generate_visualizations(pred, gt, mask, box_size=0.3):
     mask = mask[batch_idx].detach().cpu().numpy()
 
     fig = plt.figure(figsize=(10, 10))
-    ax = plt.axes(projection='3d')
+    ax = plt.axes(projection="3d")
     ax.scatter3D(
-        pred[~mask][:, 0], pred[~mask][:, 1], pred[~mask][:, 2],
-        color='red', label='pred'
+        pred[~mask][:, 0],
+        pred[~mask][:, 1],
+        pred[~mask][:, 2],
+        color="red",
+        label="pred",
     )
     ax.scatter3D(
-        gt[~mask][:, 0], gt[~mask][:, 1], gt[~mask][:, 2],
-        color='blue', label='gt'
+        gt[~mask][:, 0], gt[~mask][:, 1], gt[~mask][:, 2], color="blue", label="gt"
     )
 
     center = gt[~mask].mean(0)
@@ -409,7 +427,7 @@ def generate_visualizations(pred, gt, mask, box_size=0.3):
     return img.transpose(2, 0, 1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     # Arguments
     args = Arguments().parse_args()
@@ -430,7 +448,7 @@ if __name__ == '__main__':
     print("Logging:", log_dir)
     print(
         "Available devices (CUDA_VISIBLE_DEVICES):",
-        os.environ.get("CUDA_VISIBLE_DEVICES")
+        os.environ.get("CUDA_VISIBLE_DEVICES"),
     )
     print("Device count", torch.cuda.device_count())
     args.local_rank = int(os.environ["LOCAL_RANK"])
@@ -442,7 +460,7 @@ if __name__ == '__main__':
 
     # DDP initialization
     torch.cuda.set_device(args.local_rank)
-    torch.distributed.init_process_group(backend='nccl', init_method='env://')
+    torch.distributed.init_process_group(backend="nccl", init_method="env://")
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.deterministic = True
