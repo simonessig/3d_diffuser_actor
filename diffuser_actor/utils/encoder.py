@@ -44,7 +44,9 @@ class Encoder(nn.Module):
             p.requires_grad = False
 
         # Semantic visual features at different scales
-        self.feature_pyramid = FeaturePyramidNetwork([64, 256, 512, 1024, 2048], embedding_dim)
+        self.feature_pyramid = FeaturePyramidNetwork(
+            [64, 256, 512, 1024, 2048], embedding_dim
+        )
         if self.image_size == (128, 128):
             # Coarse RGB features are the 2nd layer of the feature pyramid
             # at 1/4 resolution (32x32)
@@ -101,7 +103,9 @@ class Encoder(nn.Module):
             - curr_gripper_feats: (B, nhist, F)
             - curr_gripper_pos: (B, nhist, F, 2)
         """
-        return self._encode_gripper(curr_gripper, self.curr_gripper_embed, context_feats, context)
+        return self._encode_gripper(
+            curr_gripper, self.curr_gripper_embed, context_feats, context
+        )
 
     def encode_goal_gripper(self, goal_gripper, context_feats, context):
         """
@@ -142,7 +146,10 @@ class Encoder(nn.Module):
         gripper_feats = einops.rearrange(gripper_feats, "b npt c -> npt b c")
         context_feats = einops.rearrange(context_feats, "b npt c -> npt b c")
         gripper_feats = self.gripper_context_head(
-            query=gripper_feats, value=context_feats, query_pos=gripper_pos, value_pos=context_pos
+            query=gripper_feats,
+            value=context_feats,
+            query_pos=gripper_pos,
+            value_pos=context_pos,
         )[-1]
         gripper_feats = einops.rearrange(gripper_feats, "nhist b c -> b nhist c")
 
@@ -185,7 +192,9 @@ class Encoder(nn.Module):
 
             # Merge different cameras for clouds, separate for rgb features
             h, w = pcd_i.shape[-2:]
-            pcd_i = einops.rearrange(pcd_i, "(bt ncam) c h w -> bt (ncam h w) c", ncam=num_cameras)
+            pcd_i = einops.rearrange(
+                pcd_i, "(bt ncam) c h w -> bt (ncam h w) c", ncam=num_cameras
+            )
             rgb_features_i = einops.rearrange(
                 rgb_features_i, "(bt ncam) c h w -> bt ncam c h w", ncam=num_cameras
             )
@@ -221,21 +230,31 @@ class Encoder(nn.Module):
         npts, bs, ch = context_features.shape
 
         # Sample points with FPS
-        sampled_inds = dgl_geo.farthest_point_sampler(
-            einops.rearrange(context_features, "npts b c -> b npts c").to(torch.float64),
-            max(npts // self.fps_subsampling_factor, 1),
-            0,
-        ).long()
+        sampled_inds = (
+            dgl_geo.farthest_point_sampler(
+                einops.rearrange(context_features, "npts b c -> b npts c")
+                .to(torch.float64)
+                .cpu(),
+                max(npts // self.fps_subsampling_factor, 1),
+                0,
+            )
+            .long()
+            .to(context_pos.device)
+        )
 
         # Sample features
         expanded_sampled_inds = sampled_inds.unsqueeze(-1).expand(-1, -1, ch)
         sampled_context_features = torch.gather(
-            context_features, 0, einops.rearrange(expanded_sampled_inds, "b npts c -> npts b c")
+            context_features,
+            0,
+            einops.rearrange(expanded_sampled_inds, "b npts c -> npts b c"),
         )
 
         # Sample positional embeddings
         _, _, ch, npos = context_pos.shape
-        expanded_sampled_inds = sampled_inds.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, ch, npos)
+        expanded_sampled_inds = (
+            sampled_inds.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, ch, npos)
+        )
         sampled_context_pos = torch.gather(context_pos, 1, expanded_sampled_inds)
         return sampled_context_features, sampled_context_pos
 

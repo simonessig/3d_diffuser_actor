@@ -11,13 +11,13 @@ max_tries=2
 verbose=1
 interpolation_length=2
 single_task_gripper_loc_bounds=0
-embedding_dim=192
+embedding_dim=120
 cameras="front"
 fps_subsampling_factor=5
 lang_enhanced=0
 relative_action=0
 seed=0
-checkpoint=train_logs/last.pth
+checkpoint=train_logs/real_keypose/last.pth
 quaternion_format=wxyz
 
 robot_ip=10.10.10.210
@@ -30,7 +30,7 @@ for ((i = 0; i < $num_ckpts; i++)); do
     CUDA_LAUNCH_BLOCKING=1 python online_evaluation_real/evaluate_policy.py \
         --tasks ${tasks[$i]} \
         --checkpoint $checkpoint \
-        --diffusion_timesteps 100 \
+        --diffusion_timesteps 25 \
         --fps_subsampling_factor $fps_subsampling_factor \
         --lang_enhanced $lang_enhanced \
         --relative_action $relative_action \
@@ -40,7 +40,7 @@ for ((i = 0; i < $num_ckpts; i++)); do
         --verbose $verbose \
         --action_dim 7 \
         --collision_checking 0 \
-        --predict_trajectory 1 \
+        --predict_trajectory 0 \
         --embedding_dim $embedding_dim \
         --rotation_parametrization "6D" \
         --single_task_gripper_loc_bounds $single_task_gripper_loc_bounds \
@@ -62,5 +62,4 @@ for ((i = 0; i < $num_ckpts; i++)); do
         --arm_port $arm_port \
         --gripper_port $gripper_port \
         --cam_calib_file $cam_calib_file
-    # --gripper_loc_bounds_file $gripper_loc_bounds_file \
 done

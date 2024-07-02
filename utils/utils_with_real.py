@@ -121,7 +121,10 @@ def deproject(depth_img, intrinsics, extrinsics):
     _intrinsics.model = intrinsics.model
 
     points = np.array(
-        [pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, i, depth_img[i]) for i in zip(v, u)]
+        [
+            pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, i, depth_img[i])
+            for i in zip(v, u)
+        ]
     )
     x, y, z = points.T
     y = -y
@@ -226,7 +229,9 @@ class Actioner:
             trajectory_np = []
             for j in range(key_frame[i - 1] if i > 0 else 0, key_frame[i]):
                 obs = demo[j]
-                trajectory_np.append(np.concatenate([obs.gripper_pose, [obs.gripper_open]]))
+                trajectory_np.append(
+                    np.concatenate([obs.gripper_pose, [obs.gripper_open]])
+                )
             trajectory_ls.append(np.stack(trajectory_np))
 
         trajectory_mask_ls = [
@@ -252,7 +257,7 @@ class Actioner:
         rgbs = rgbs / 2 + 0.5  # in [0, 1]
 
         if self._instr is None:
-            raise ValueError()
+            self._instr = torch.zeros((rgbs.shape[0], 53, 512))
 
         self._instr = self._instr.to(rgbs.device)
         # self._task_id = self._task_id.to(rgbs.device)
@@ -260,9 +265,9 @@ class Actioner:
         # Predict trajectory
         if self._predict_trajectory:
             print("Predict Trajectory")
-            fake_traj = torch.full([1, interpolation_length - 1, gripper.shape[-1]], 0).to(
-                rgbs.device
-            )
+            fake_traj = torch.full(
+                [1, interpolation_length - 1, gripper.shape[-1]], 0
+            ).to(rgbs.device)
             traj_mask = torch.full([1, interpolation_length - 1], False).to(rgbs.device)
             output["trajectory"] = self._policy(
                 fake_traj,
@@ -280,6 +285,7 @@ class Actioner:
                 pcds[:, -1],
                 self._instr,
                 gripper[:, -1, : self._action_dim],
+                run_inference=True,
             )
             # Hackish, assume self._policy is an instance of Act3D
             output["action"] = self._policy.prepare_action(pred)
@@ -306,3 +312,19 @@ def obs_to_attn(obs, camera):
     v = int((proj_3[1] / proj_3[2]).round())
 
     return u, v
+
+
+def transform(obs_dict):
+    obs_rgb = []
+    obs_pc = []
+    rgb = torch.tensor(obs_dict["rgb"]).float().permute(2, 0, 1)
+    pc = torch.tensor(obs_dict["pc"]).float().permute(2, 0, 1)
+
+    # normalise to [-1, 1]
+    rgb = rgb / 255.0
+    rgb = 2 * (rgb - 0.5)
+
+    obs_rgb += [rgb.float()]
+    obs_pc += [pc.float()]
+    obs = obs_rgb + obs_pc
+    return torch.cat(obs, dim=0)

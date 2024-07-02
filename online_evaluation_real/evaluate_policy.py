@@ -9,11 +9,14 @@ from typing import Optional, Tuple
 import numpy as np
 import tap
 import torch
+import wandb
 
 from diffuser_actor.trajectory_optimization.diffuser_actor import DiffuserActor
 from online_evaluation_real.ig import InteractiveGuidance
+from online_evaluation_real.utils.franka import ControlType, FrankaArm
+from online_evaluation_real.utils.frankahand import FrankaHand
+from online_evaluation_real.utils.real_env import RealEnv
 from utils.common_utils import get_gripper_loc_bounds, round_floats
-from utils.real_env import RealEnv
 from utils.utils_with_real import Actioner
 
 
@@ -40,6 +43,11 @@ class Arguments(tap.Tap):
     single_task_gripper_loc_bounds: int = 0
     predict_trajectory: int = 1
 
+    robot_ip: str = "10.10.10.210"
+    arm_port: int = 50051
+    gripper_port: int = 50052
+    cam_calib_file: Path = "calibration.json"
+
     # 3D Diffuser Actor model parameters
     diffusion_timesteps: int = 100
     num_history: int = 3
@@ -54,7 +62,7 @@ class Arguments(tap.Tap):
     backbone: str = "clip"  # one of "resnet", "clip"
     embedding_dim: int = 120
     num_vis_ins_attn_layers: int = 2
-    use_instruction: int = 1
+    use_instruction: int = 0
     rotation_parametrization: str = "6D"
     quaternion_format: str = "xyzw"
 
@@ -71,14 +79,14 @@ def load_models(args):
         task = None
     print("Gripper workspace")
 
-    if args.gripper_loc_bounds is None:
-        gripper_loc_bounds = np.array([[-2, -2, -2], [2, 2, 2]]) * 1.0
-    else:
-        gripper_loc_bounds = get_gripper_loc_bounds(
-            args.gripper_loc_bounds_file,
-            task=task,
-            buffer=args.gripper_loc_bounds_buffer,
-        )
+    # if args.gripper_loc_bounds is None:
+    gripper_loc_bounds = np.array([[-2, -2, -2], [2, 2, 2]]) * 1.0
+    # else:
+    #     gripper_loc_bounds = get_gripper_loc_bounds(
+    #         args.gripper_loc_bounds_file,
+    #         task=task,
+    #         buffer=args.gripper_loc_bounds_buffer,
+    #     )
 
     ig = InteractiveGuidance(device)
 
@@ -114,6 +122,29 @@ def load_models(args):
     return model
 
 
+def setup_robot(
+    name: str,
+    ip_address: str,
+    arm_port: int,
+    gripper_port: int,
+    control_type: ControlType,
+) -> Tuple[FrankaArm, FrankaHand]:
+    robot_arm = FrankaArm(
+        name=f"{name} arm",
+        ip_address=ip_address,
+        port=arm_port,
+        control_type=control_type,
+    )
+    assert robot_arm.connect(), f"Connection to {robot_arm.name} failed"
+
+    robot_gripper = FrankaHand(
+        name=f"{name} gripper", ip_address=ip_address, port=gripper_port
+    )
+    assert robot_gripper.connect(), f"Connection to {robot_gripper.name} failed"
+
+    return robot_arm, robot_gripper
+
+
 if __name__ == "__main__":
     # Arguments
     args = Arguments().parse_args()
@@ -132,13 +163,21 @@ if __name__ == "__main__":
     # Load models
     model = load_models(args)
 
+    # arm, gripper = setup_robot(
+    #     "robot",
+    #     args.robot_ip,
+    #     args.arm_port,
+    #     args.gripper_port,
+    #     control_type=ControlType.DEFAULT,
+    # )
+
     # Load RLBench environment
     env = RealEnv(
         data_path=args.data_dir,
+        # arm=arm,
+        # gripper=gripper,
+        cam_calib_file=args.cam_calib_file,
         image_size=[int(x) for x in args.image_size.split(",")],
-        apply_rgb=True,
-        apply_pc=True,
-        apply_cameras=args.cameras,
     )
 
     actioner = Actioner(
@@ -151,7 +190,7 @@ if __name__ == "__main__":
     task_success_rates = {}
 
     for task_str in args.tasks:
-        var_success_rates = env.evaluate_task(
+        success_rate = env.evaluate_task(
             task_str,
             max_steps=args.max_steps,
             actioner=actioner,
@@ -160,10 +199,3 @@ if __name__ == "__main__":
             verbose=bool(args.verbose),
             num_history=args.num_history,
         )
-        print()
-        print(f"{task_str} variation success rates:", round_floats(var_success_rates))
-        print(f"{task_str} mean success rate:", round_floats(var_success_rates["mean"]))
-
-        task_success_rates[task_str] = var_success_rates
-        with open(args.output_file, "w") as f:
-            json.dump(round_floats(task_success_rates), f, indent=4)
