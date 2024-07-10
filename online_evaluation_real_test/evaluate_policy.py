@@ -12,10 +12,8 @@ import torch
 
 import wandb
 from diffuser_actor.trajectory_optimization.diffuser_actor import DiffuserActor
-from online_evaluation_real.ig import InteractiveGuidance
-from online_evaluation_real.utils.franka import ControlType, FrankaArm
-from online_evaluation_real.utils.frankahand import FrankaHand
-from online_evaluation_real.utils.real_env import RealEnv
+from online_evaluation_real_test.ig import InteractiveGuidance
+from online_evaluation_real_test.utils.real_env import RealEnv
 from utils.common_utils import get_gripper_loc_bounds, round_floats
 from utils.utils_with_real import Actioner
 
@@ -81,12 +79,6 @@ def load_models(args):
 
     # if args.gripper_loc_bounds is None:
     gripper_loc_bounds = np.array([[0, -2, 0], [2, 2, 1.5]]) * 1.0
-    # else:
-    #     gripper_loc_bounds = get_gripper_loc_bounds(
-    #         args.gripper_loc_bounds_file,
-    #         task=task,
-    #         buffer=args.gripper_loc_bounds_buffer,
-    #     )
 
     ig = InteractiveGuidance(device)
 
@@ -105,7 +97,7 @@ def load_models(args):
             nhist=args.num_history,
             relative=bool(args.relative_action),
             lang_enhanced=bool(args.lang_enhanced),
-            ig=ig,
+            # ig=ig,
         ).to(device)
     else:
         raise NotImplementedError
@@ -120,27 +112,6 @@ def load_models(args):
     model.eval()
 
     return model
-
-
-def setup_robot(
-    name: str,
-    ip_address: str,
-    arm_port: int,
-    gripper_port: int,
-    control_type: ControlType,
-) -> Tuple[FrankaArm, FrankaHand]:
-    robot_arm = FrankaArm(
-        name=f"{name} arm",
-        ip_address=ip_address,
-        port=arm_port,
-        control_type=control_type,
-    )
-    assert robot_arm.connect(), f"Connection to {robot_arm.name} failed"
-
-    robot_gripper = FrankaHand(name=f"{name} gripper", ip_address=ip_address, port=gripper_port)
-    assert robot_gripper.connect(), f"Connection to {robot_gripper.name} failed"
-
-    return robot_arm, robot_gripper
 
 
 if __name__ == "__main__":
@@ -161,22 +132,8 @@ if __name__ == "__main__":
     # Load models
     model = load_models(args)
 
-    # arm, gripper = setup_robot(
-    #     "robot",
-    #     args.robot_ip,
-    #     args.arm_port,
-    #     args.gripper_port,
-    #     control_type=ControlType.DEFAULT,
-    # )
-
     # Load RLBench environment
-    env = RealEnv(
-        data_path=args.data_dir,
-        # arm=arm,
-        # gripper=gripper,
-        cam_calib_file=args.cam_calib_file,
-        image_size=[int(x) for x in args.image_size.split(",")],
-    )
+    env = RealEnv(data_path=args.data_dir)
 
     actioner = Actioner(
         policy=model,

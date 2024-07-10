@@ -18,7 +18,7 @@ class Arguments(tap.Tap):
     data_dir: Path = Path(__file__).parent.parent / "data/real/raw"
     seed: int = 2
     task: str = "pick_box"
-    split: str = "train"
+    split: float = 0.8
     image_size: str = "128,128"  # "256,256"
     output: Path = Path(__file__).parent.parent / "data/real/packaged"
 
@@ -126,21 +126,15 @@ def process_datas(datas, keyframe_inds):
     rgb = np.array(datas["rgb"])[:, None]  # (traj_len, H, W, 3)
     rgb_pcd = np.stack([rgb, pcd], axis=2)  # (traj_len, ncam, 2, H, W, 3)])
     rgb_pcd = rgb_pcd.transpose(0, 1, 2, 5, 3, 4)  # (traj_len, ncam, 2, 3, H, W)
-    rgb_pcd = torch.as_tensor(
-        rgb_pcd, dtype=torch.float32
-    )  # (traj_len, ncam, 2, 3, H, W)
+    rgb_pcd = torch.as_tensor(rgb_pcd, dtype=torch.float32)  # (traj_len, ncam, 2, 3, H, W)
 
     # prepare keypose actions
     keyframe_indices = torch.as_tensor(keyframe_inds)[None, :]
     gripper_indices = torch.arange(len(datas["proprios"])).view(-1, 1)
-    action_indices = torch.argmax(
-        (gripper_indices < keyframe_indices).float(), dim=1
-    ).tolist()
+    action_indices = torch.argmax((gripper_indices < keyframe_indices).float(), dim=1).tolist()
     action_indices[-1] = len(keyframe_inds) - 1
     actions = [datas["proprios"][keyframe_inds[i]] for i in action_indices]
-    action_tensors = [
-        torch.as_tensor(a, dtype=torch.float32).view(1, -1) for a in actions
-    ]
+    action_tensors = [torch.as_tensor(a, dtype=torch.float32).view(1, -1) for a in actions]
 
     # prepare camera_dicts
     camera_dicts = [{"front": (0, 0)}]
@@ -191,18 +185,23 @@ def process_datas(datas, keyframe_inds):
 
 
 def main(args):
-    # print(480 / (2 * np.tan(np.deg2rad(58) / 2)))
-    # print(np.rad2deg(2 * np.arctan(480 / (2 * 608))))
-    # return
-    episodes_dir = args.data_dir / args.task / args.split
-    episodes = [int(ep.stem[7:]) for ep in episodes_dir.glob("episode*")]
+    episodes_dir = args.data_dir / args.task / "episodes"
+    episodes = np.array([int(ep.stem[7:]) for ep in episodes_dir.glob("episode*")])
+    np.random.shuffle(episodes)
+
+    train_len = int(len(episodes) * args.split)
+    test_len = len(episodes) - train_len
+    split_strings = np.array(["train"] * train_len + ["test"] * test_len)
 
     cam_calib_file = args.data_dir / args.task / "calibration.json"
     with open(cam_calib_file) as json_data:
         cam_calib = json.load(json_data)
     cam_info = get_cam_info(cam_calib[0])
 
-    for ep_id in tqdm(episodes):
+    print(episodes)
+    input()
+
+    for ep_id, split in tqdm(zip(episodes, split_strings)):
         datas = {
             "pcd": [],
             "rgb": [],
@@ -214,14 +213,17 @@ def main(args):
         load_episode(episodes_dir, ep_id, datas, args, cam_info)
 
         # Get keypoints
-        _, keyframe_inds = keypoint_discovery(datas["proprios"])
+        # _, keyframe_inds = keypoint_discovery(datas["proprios"])
+
+        # Only keypoints are captured during demos
+        keyframe_inds = np.arange(len(datas["proprios"]))
 
         # Construct save data
         state_dict = process_datas(datas, keyframe_inds)
-        # print(state_dict[1][0])
+        # print(state_dict[4][0])
         # return
         # Save
-        taskvar_dir = args.output / args.split / f"{args.task}+0"
+        taskvar_dir = args.output / split / f"{args.task}+0"
         taskvar_dir.mkdir(parents=True, exist_ok=True)
         with open(taskvar_dir / f"ep{ep_id}.dat", "wb") as f:
             f.write(blosc.compress(pickle.dumps(state_dict)))

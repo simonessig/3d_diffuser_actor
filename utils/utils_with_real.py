@@ -121,10 +121,7 @@ def deproject(depth_img, intrinsics, extrinsics):
     _intrinsics.model = intrinsics.model
 
     points = np.array(
-        [
-            pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, i, depth_img[i])
-            for i in zip(v, u)
-        ]
+        [pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, i, depth_img[i]) for i in zip(v, u)]
     )
     x, y, z = points.T
     y = -y
@@ -229,9 +226,7 @@ class Actioner:
             trajectory_np = []
             for j in range(key_frame[i - 1] if i > 0 else 0, key_frame[i]):
                 obs = demo[j]
-                trajectory_np.append(
-                    np.concatenate([obs.gripper_pose, [obs.gripper_open]])
-                )
+                trajectory_np.append(np.concatenate([obs.gripper_pose, [obs.gripper_open]]))
             trajectory_ls.append(np.stack(trajectory_np))
 
         trajectory_mask_ls = [
@@ -265,9 +260,9 @@ class Actioner:
         # Predict trajectory
         if self._predict_trajectory:
             print("Predict Trajectory")
-            fake_traj = torch.full(
-                [1, interpolation_length - 1, gripper.shape[-1]], 0
-            ).to(rgbs.device)
+            fake_traj = torch.full([1, interpolation_length - 1, gripper.shape[-1]], 0).to(
+                rgbs.device
+            )
             traj_mask = torch.full([1, interpolation_length - 1], False).to(rgbs.device)
             output["trajectory"] = self._policy(
                 fake_traj,
@@ -280,15 +275,19 @@ class Actioner:
             )
         else:
             print("Predict Keypose")
-            pred = self._policy(
+            fake_traj = torch.full([1, 1, gripper.shape[-1]], 0).to(rgbs.device)
+            traj_mask = torch.full([1, 1], False).to(rgbs.device)
+            output["action"] = self._policy(
+                fake_traj,
+                traj_mask,
                 rgbs[:, -1],
                 pcds[:, -1],
                 self._instr,
-                gripper[:, -1, : self._action_dim],
+                gripper[..., :7],
                 run_inference=True,
             )
             # Hackish, assume self._policy is an instance of Act3D
-            output["action"] = self._policy.prepare_action(pred)
+            # output["action"] = self._policy.prepare_action(pred)
 
         return output
 

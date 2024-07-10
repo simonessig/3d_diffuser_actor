@@ -6,11 +6,11 @@ import random
 
 import numpy as np
 import torch
+import torch.distributed as dist
 import torch.optim as optim
+from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, default_collate
 from torch.utils.data.distributed import DistributedSampler
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import trange
 
@@ -37,11 +37,13 @@ class BaseTrainTester:
 
     def get_loaders(self, collate_fn=default_collate):
         """Initialize data loaders."""
+
         def seed_worker(worker_id):
             worker_seed = torch.initial_seed() % 2**32
             np.random.seed(worker_seed)
             random.seed(worker_seed)
             np.random.seed(np.random.get_state()[1][0] + worker_id)
+
         # Datasets
         train_dataset, test_dataset = self.get_datasets()
         # Samplers and loaders
@@ -58,7 +60,7 @@ class BaseTrainTester:
             pin_memory=True,
             sampler=train_sampler,
             drop_last=True,
-            generator=g
+            generator=g,
         )
         test_sampler = DistributedSampler(test_dataset, shuffle=True)
         test_loader = DataLoader(
@@ -71,7 +73,7 @@ class BaseTrainTester:
             pin_memory=True,
             sampler=test_sampler,
             drop_last=False,
-            generator=g
+            generator=g,
         )
         return train_loader, test_loader
 
@@ -90,7 +92,7 @@ class BaseTrainTester:
         """Initialize optimizer."""
         optimizer_grouped_parameters = [
             {"params": [], "weight_decay": 0.0, "lr": self.args.lr},
-            {"params": [], "weight_decay": 5e-4, "lr": self.args.lr}
+            {"params": [], "weight_decay": 5e-4, "lr": self.args.lr},
         ]
         no_decay = ["bias", "LayerNorm.weight", "LayerNorm.bias"]
         for name, param in model.named_parameters():
@@ -119,8 +121,10 @@ class BaseTrainTester:
         if torch.cuda.is_available():
             model = model.cuda()
         model = DistributedDataParallel(
-            model, device_ids=[self.args.local_rank],
-            broadcast_buffers=False, find_unused_parameters=True
+            model,
+            device_ids=[self.args.local_rank],
+            broadcast_buffers=False,
+            find_unused_parameters=True,
         )
 
         # Check for a checkpoint
@@ -134,11 +138,11 @@ class BaseTrainTester:
             print("Test evaluation.......")
             model.eval()
             new_loss = self.evaluate_nsteps(
-                model, criterion, test_loader, step_id=-1,
-                val_iters=max(
-                    5,
-                    int(4 * len(self.args.tasks)/self.args.batch_size_val)
-                )
+                model,
+                criterion,
+                test_loader,
+                step_id=-1,
+                val_iters=max(5, int(4 * len(self.args.tasks) / self.args.batch_size_val)),
             )
             return model
 
@@ -154,30 +158,27 @@ class BaseTrainTester:
 
             self.train_one_step(model, criterion, optimizer, step_id, sample)
             if (step_id + 1) % self.args.val_freq == 0:
-                print("Train evaluation.......")
+                # print("Train evaluation.......")
                 model.eval()
                 new_loss = self.evaluate_nsteps(
-                    model, criterion, train_loader, step_id,
-                    val_iters=max(
-                        5,
-                        int(4 * len(self.args.tasks)/self.args.batch_size_val)
-                    ),
-                    split='train'
+                    model,
+                    criterion,
+                    train_loader,
+                    step_id,
+                    val_iters=max(5, int(4 * len(self.args.tasks) / self.args.batch_size_val)),
+                    split="train",
                 )
-                print("Test evaluation.......")
+                # print("Test evaluation.......")
                 model.eval()
                 new_loss = self.evaluate_nsteps(
-                    model, criterion, test_loader, step_id,
-                    val_iters=max(
-                        5,
-                        int(4 * len(self.args.tasks)/self.args.batch_size_val)
-                    )
+                    model,
+                    criterion,
+                    test_loader,
+                    step_id,
+                    val_iters=max(5, int(4 * len(self.args.tasks) / self.args.batch_size_val)),
                 )
                 if dist.get_rank() == 0:  # save model
-                    best_loss = self.save_checkpoint(
-                        model, optimizer, step_id,
-                        new_loss, best_loss
-                    )
+                    best_loss = self.save_checkpoint(model, optimizer, step_id, new_loss, best_loss)
                 model.train()
 
         return model
@@ -187,8 +188,7 @@ class BaseTrainTester:
         pass
 
     @torch.no_grad()
-    def evaluate_nsteps(self, model, criterion, loader, step_id, val_iters,
-                        split='val'):
+    def evaluate_nsteps(self, model, criterion, loader, step_id, val_iters, split="val"):
         """Run a given number of evaluation steps."""
         return None
 
@@ -198,16 +198,18 @@ class BaseTrainTester:
 
         model_dict = torch.load(self.args.checkpoint, map_location="cpu")
         model.load_state_dict(model_dict["weight"])
-        if 'optimizer' in model_dict:
+        if "optimizer" in model_dict:
             optimizer.load_state_dict(model_dict["optimizer"])
             for p in range(len(optimizer.param_groups)):
-                optimizer.param_groups[p]['lr'] = self.args.lr
+                optimizer.param_groups[p]["lr"] = self.args.lr
         start_iter = model_dict.get("iter", 0)
         best_loss = model_dict.get("best_loss", None)
 
-        print("=> loaded successfully '{}' (step {})".format(
-            self.args.checkpoint, model_dict.get("iter", 0)
-        ))
+        print(
+            "=> loaded successfully '{}' (step {})".format(
+                self.args.checkpoint, model_dict.get("iter", 0)
+            )
+        )
         del model_dict
         torch.cuda.empty_cache()
         return start_iter, best_loss
@@ -216,18 +218,24 @@ class BaseTrainTester:
         """Save checkpoint if requested."""
         if new_loss is None or best_loss is None or new_loss <= best_loss:
             best_loss = new_loss
-            torch.save({
+            torch.save(
+                {
+                    "weight": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "iter": step_id + 1,
+                    "best_loss": best_loss,
+                },
+                self.args.log_dir / "best.pth",
+            )
+        torch.save(
+            {
                 "weight": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "iter": step_id + 1,
-                "best_loss": best_loss
-            }, self.args.log_dir / "best.pth")
-        torch.save({
-            "weight": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "iter": step_id + 1,
-            "best_loss": best_loss
-        }, self.args.log_dir / "last.pth")
+                "best_loss": best_loss,
+            },
+            self.args.log_dir / "last.pth",
+        )
         return best_loss
 
     def synchronize_between_processes(self, a_dict):
@@ -237,10 +245,7 @@ class BaseTrainTester:
             merged = {}
             for key in all_dicts[0].keys():
                 device = all_dicts[0][key].device
-                merged[key] = torch.cat([
-                    p[key].to(device) for p in all_dicts
-                    if key in p
-                ])
+                merged[key] = torch.cat([p[key].to(device) for p in all_dicts if key in p])
             a_dict = merged
         return a_dict
 
@@ -275,14 +280,9 @@ def all_gather(data):
     # gathering tensors of different shapes
     tensor_list = []
     for _ in size_list:
-        tensor_list.append(torch.empty(
-            (max_size,), dtype=torch.uint8, device="cuda"
-        ))
+        tensor_list.append(torch.empty((max_size,), dtype=torch.uint8, device="cuda"))
     if local_size != max_size:
-        padding = torch.empty(
-            size=(max_size - local_size,),
-            dtype=torch.uint8, device="cuda"
-        )
+        padding = torch.empty(size=(max_size - local_size,), dtype=torch.uint8, device="cuda")
         tensor = torch.cat((tensor, padding), dim=0)
     dist.all_gather(tensor_list, tensor)
 

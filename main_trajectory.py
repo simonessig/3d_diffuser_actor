@@ -26,7 +26,7 @@ from utils.common_utils import (
 
 
 class Arguments(tap.Tap):
-    cameras: Tuple[str, ...] = ("wrist", "left_shoulder", "right_shoulder")
+    cameras: Tuple[str, ...] = None
     image_size: str = "256,256"
     max_episodes_per_task: int = 100
     instructions: Optional[Path] = "instructions.pkl"
@@ -103,9 +103,7 @@ class TrainTester(BaseTrainTester):
             raise NotImplementedError()
         else:
             taskvar = [
-                (task, var)
-                for task, var_instr in instruction.items()
-                for var in var_instr.keys()
+                (task, var) for task, var_instr in instruction.items() for var in var_instr.keys()
             ]
 
         # Initialize datasets with arguments
@@ -198,10 +196,7 @@ class TrainTester(BaseTrainTester):
         loss.backward()
 
         # Update
-        if (
-            step_id % self.args.accumulate_grad_batches
-            == self.args.accumulate_grad_batches - 1
-        ):
+        if step_id % self.args.accumulate_grad_batches == self.args.accumulate_grad_batches - 1:
             optimizer.step()
 
         # Log
@@ -210,9 +205,7 @@ class TrainTester(BaseTrainTester):
             self.writer.add_scalar("train-loss/noise_mse", loss, step_id)
 
     @torch.no_grad()
-    def evaluate_nsteps(
-        self, model, criterion, loader, step_id, val_iters, split="val"
-    ):
+    def evaluate_nsteps(self, model, criterion, loader, step_id, val_iters, split="val"):
         """Run a given number of evaluation steps."""
         if self.args.val_iters != -1:
             val_iters = self.args.val_iters
@@ -253,30 +246,30 @@ class TrainTester(BaseTrainTester):
 
             # Gather global statistics
             for n, l in losses.items():
-                key = f"{split}-losses/mean/{n}"
+                key = f"{split}/{n}"
                 if key not in values:
                     values[key] = torch.Tensor([]).to(device)
                 values[key] = torch.cat([values[key], l.unsqueeze(0)])
 
             # Gather per-task statistics
-            tasks = np.array(sample["task"])
-            for n, l in losses_B.items():
-                for task in np.unique(tasks):
-                    key = f"{split}-loss/{task}/{n}"
-                    l_task = l[tasks == task].mean()
-                    if key not in values:
-                        values[key] = torch.Tensor([]).to(device)
-                    values[key] = torch.cat([values[key], l_task.unsqueeze(0)])
+            # tasks = np.array(sample["task"])
+            # for n, l in losses_B.items():
+            #     for task in np.unique(tasks):
+            #         key = f"{split}-loss/{task}/{n}"
+            #         l_task = l[tasks == task].mean()
+            #         if key not in values:
+            #             values[key] = torch.Tensor([]).to(device)
+            #         values[key] = torch.cat([values[key], l_task.unsqueeze(0)])
 
             # Generate visualizations
-            if i == 0 and dist.get_rank() == 0 and step_id > -1:
-                viz_key = f"{split}-viz/viz"
-                viz = generate_visualizations(
-                    action,
-                    sample["trajectory"].to(device),
-                    sample["trajectory_mask"].to(device),
-                )
-                self.writer.add_image(viz_key, viz, step_id)
+            # if i == 0 and dist.get_rank() == 0 and step_id > -1:
+            #     viz_key = f"{split}-viz/viz"
+            #     viz = generate_visualizations(
+            #         action,
+            #         sample["trajectory"].to(device),
+            #         sample["trajectory_mask"].to(device),
+            #     )
+            #     self.writer.add_image(viz_key, viz, step_id)
 
         # Log all statistics
         values = self.synchronize_between_processes(values)
@@ -288,7 +281,7 @@ class TrainTester(BaseTrainTester):
 
             wandb.log(values)
 
-        return values.get("val-losses/traj_pos_acc_001", None)
+        return values.get("val/traj_action_mse", None)
 
 
 def traj_collate_fn(batch):
@@ -304,10 +297,7 @@ def traj_collate_fn(batch):
     ]
     ret_dict = {
         key: torch.cat(
-            [
-                item[key].float() if key != "trajectory_mask" else item[key]
-                for item in batch
-            ]
+            [item[key].float() if key != "trajectory_mask" else item[key] for item in batch]
         )
         for key in keys
     }
@@ -408,9 +398,7 @@ def generate_visualizations(pred, gt, mask, box_size=0.3):
         color="red",
         label="pred",
     )
-    ax.scatter3D(
-        gt[~mask][:, 0], gt[~mask][:, 1], gt[~mask][:, 2], color="blue", label="gt"
-    )
+    ax.scatter3D(gt[~mask][:, 0], gt[~mask][:, 1], gt[~mask][:, 2], color="blue", label="gt")
 
     center = gt[~mask].mean(0)
     ax.set_xlim(center[0] - box_size, center[0] + box_size)
@@ -435,7 +423,7 @@ if __name__ == "__main__":
     print(args)
     print("-" * 100)
     if args.gripper_loc_bounds is None:
-        args.gripper_loc_bounds = np.array([[-2, -2, -2], [2, 2, 2]]) * 1.0
+        args.gripper_loc_bounds = np.array([[0, -2, 0], [2, 2, 1.5]]) * 1.0
     else:
         args.gripper_loc_bounds = get_gripper_loc_bounds(
             args.gripper_loc_bounds,

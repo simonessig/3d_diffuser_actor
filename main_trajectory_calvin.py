@@ -1,26 +1,23 @@
 """Main script for trajectory optimization."""
 
 import os
-import random
 import pickle
+import random
 
+import numpy as np
 import torch
 import torch.optim as optim
 from matplotlib import pyplot as plt
-import numpy as np
 
 from datasets.dataset_calvin import CalvinDataset
+from main_trajectory import Arguments
 from main_trajectory import TrainTester as BaseTrainTester
-from main_trajectory import traj_collate_fn, fig_to_numpy, Arguments
-from utils.common_utils import (
-    load_instructions, get_gripper_loc_bounds
-)
+from main_trajectory import fig_to_numpy, traj_collate_fn
+from utils.common_utils import get_gripper_loc_bounds, load_instructions
 
 
 def load_instructions(instructions, split):
-    instructions = pickle.load(
-        open(f"{instructions}/{split}.pkl", "rb")
-    )['embeddings']
+    instructions = pickle.load(open(f"{instructions}/{split}.pkl", "rb"))["embeddings"]
     return instructions
 
 
@@ -34,14 +31,13 @@ class TrainTester(BaseTrainTester):
     def get_datasets(self):
         """Initialize datasets."""
         # Load instruction, based on which we load tasks/variations
-        train_instruction = load_instructions(
-            self.args.instructions, 'training'
-        )
-        test_instruction = load_instructions(
-            self.args.instructions, 'validation'
-        )
+        train_instruction = load_instructions(self.args.instructions, "training")
+        test_instruction = load_instructions(self.args.instructions, "validation")
         taskvar = [
-            ("A", 0), ("B", 0), ("C", 0), ("D", 0),
+            ("A", 0),
+            ("B", 0),
+            ("C", 0),
+            ("D", 0),
         ]
 
         # Initialize datasets with arguments
@@ -55,13 +51,11 @@ class TrainTester(BaseTrainTester):
             num_iters=self.args.train_iters,
             cameras=self.args.cameras,
             training=True,
-            image_rescale=tuple(
-                float(x) for x in self.args.image_rescale.split(",")
-            ),
+            image_rescale=tuple(float(x) for x in self.args.image_rescale.split(",")),
             return_low_lvl_trajectory=True,
             dense_interpolation=bool(self.args.dense_interpolation),
             interpolation_length=self.args.interpolation_length,
-            relative_action=bool(self.args.relative_action)
+            relative_action=bool(self.args.relative_action),
         )
         test_dataset = CalvinDataset(
             root=self.args.valset,
@@ -72,13 +66,11 @@ class TrainTester(BaseTrainTester):
             max_episodes_per_task=self.args.max_episodes_per_task,
             cameras=self.args.cameras,
             training=False,
-            image_rescale=tuple(
-                float(x) for x in self.args.image_rescale.split(",")
-            ),
+            image_rescale=tuple(float(x) for x in self.args.image_rescale.split(",")),
             return_low_lvl_trajectory=True,
             dense_interpolation=bool(self.args.dense_interpolation),
             interpolation_length=self.args.interpolation_length,
-            relative_action=bool(self.args.relative_action)
+            relative_action=bool(self.args.relative_action),
         )
         return train_dataset, test_dataset
 
@@ -86,31 +78,40 @@ class TrainTester(BaseTrainTester):
         """Save checkpoint if requested."""
         if new_loss is None or best_loss is None or new_loss <= best_loss:
             best_loss = new_loss
-            torch.save({
+            torch.save(
+                {
+                    "weight": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "iter": step_id + 1,
+                    "best_loss": best_loss,
+                },
+                self.args.log_dir / "best.pth",
+            )
+        torch.save(
+            {
                 "weight": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "iter": step_id + 1,
-                "best_loss": best_loss
-            }, self.args.log_dir / "best.pth")
-        torch.save({
-            "weight": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "iter": step_id + 1,
-            "best_loss": best_loss
-        }, self.args.log_dir / '{:07d}.pth'.format(step_id))
-        torch.save({
-            "weight": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "iter": step_id + 1,
-            "best_loss": best_loss
-        }, self.args.log_dir / "last.pth")
+                "best_loss": best_loss,
+            },
+            self.args.log_dir / "{:07d}.pth".format(step_id),
+        )
+        torch.save(
+            {
+                "weight": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "iter": step_id + 1,
+                "best_loss": best_loss,
+            },
+            self.args.log_dir / "last.pth",
+        )
         return best_loss
 
     def get_optimizer(self, model):
         """Initialize optimizer."""
         optimizer_grouped_parameters = [
             {"params": [], "weight_decay": 0.0, "lr": self.args.lr},
-            {"params": [], "weight_decay": self.args.wd, "lr": self.args.lr}
+            {"params": [], "weight_decay": self.args.wd, "lr": self.args.lr},
         ]
         no_decay = ["bias", "LayerNorm.weight", "LayerNorm.bias"]
         for name, param in model.named_parameters():
@@ -131,18 +132,20 @@ def generate_visualizations(pred, gt, mask, box_size=0.05):
         cur_mask = mask[batch_idx].detach().cpu().numpy()
 
         fig = plt.figure(figsize=(5, 5))
-        ax = plt.axes(projection='3d')
+        ax = plt.axes(projection="3d")
         ax.scatter3D(
             cur_pred[~cur_mask][:, 0],
             cur_pred[~cur_mask][:, 1],
             cur_pred[~cur_mask][:, 2],
-            color='red', label='pred'
+            color="red",
+            label="pred",
         )
         ax.scatter3D(
             cur_gt[~cur_mask][:, 0],
             cur_gt[~cur_mask][:, 1],
             cur_gt[~cur_mask][:, 2],
-            color='blue', label='gt'
+            color="blue",
+            label="gt",
         )
 
         center = cur_gt[~cur_mask].mean(0)
@@ -162,7 +165,7 @@ def generate_visualizations(pred, gt, mask, box_size=0.05):
     return images.transpose(2, 0, 1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     # Arguments
     args = Arguments().parse_args()
@@ -170,7 +173,7 @@ if __name__ == '__main__':
     print(args)
     print("-" * 100)
     if args.gripper_loc_bounds is None:
-        args.gripper_loc_bounds = np.array([[-2, -2, -2], [2, 2, 2]]) * 1.0
+        args.gripper_loc_bounds = np.array([[0, -2, 0], [2, 2, 1.5]]) * 1.0
     else:
         args.gripper_loc_bounds = get_gripper_loc_bounds(
             args.gripper_loc_bounds,
@@ -181,10 +184,7 @@ if __name__ == '__main__':
     args.log_dir = log_dir
     log_dir.mkdir(exist_ok=True, parents=True)
     print("Logging:", log_dir)
-    print(
-        "Available devices (CUDA_VISIBLE_DEVICES):",
-        os.environ.get("CUDA_VISIBLE_DEVICES")
-    )
+    print("Available devices (CUDA_VISIBLE_DEVICES):", os.environ.get("CUDA_VISIBLE_DEVICES"))
     print("Device count", torch.cuda.device_count())
     args.local_rank = int(os.environ["LOCAL_RANK"])
 
@@ -195,7 +195,7 @@ if __name__ == '__main__':
 
     # DDP initialization
     torch.cuda.set_device(args.local_rank)
-    torch.distributed.init_process_group(backend='nccl', init_method='env://')
+    torch.distributed.init_process_group(backend="nccl", init_method="env://")
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.deterministic = True

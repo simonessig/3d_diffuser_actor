@@ -1,9 +1,9 @@
 """Main script for keypose optimization."""
 
 import os
-from pathlib import Path
 import random
-from typing import Tuple, Optional
+from pathlib import Path
+from typing import Optional, Tuple
 
 import numpy as np
 import tap
@@ -12,10 +12,12 @@ import torch.distributed as dist
 from torch.nn import functional as F
 
 from datasets.dataset_engine import RLBenchDataset
-from engine import BaseTrainTester
 from diffuser_actor import Act3D
+from engine import BaseTrainTester
 from utils.common_utils import (
-    load_instructions, count_parameters, get_gripper_loc_bounds
+    count_parameters,
+    get_gripper_loc_bounds,
+    load_instructions,
 )
 
 
@@ -99,17 +101,13 @@ class TrainTester(BaseTrainTester):
         """Initialize datasets."""
         # Load instruction, based on which we load tasks/variations
         instruction = load_instructions(
-            self.args.instructions,
-            tasks=self.args.tasks,
-            variations=self.args.variations
+            self.args.instructions, tasks=self.args.tasks, variations=self.args.variations
         )
         if instruction is None:
             raise NotImplementedError()
         else:
             taskvar = [
-                (task, var)
-                for task, var_instr in instruction.items()
-                for var in var_instr.keys()
+                (task, var) for task, var_instr in instruction.items() for var in var_instr.keys()
             ]
 
         # Initialize datasets with arguments
@@ -123,12 +121,10 @@ class TrainTester(BaseTrainTester):
             num_iters=self.args.train_iters,
             cameras=self.args.cameras,
             training=True,
-            image_rescale=tuple(
-                float(x) for x in self.args.image_rescale.split(",")
-            ),
+            image_rescale=tuple(float(x) for x in self.args.image_rescale.split(",")),
             return_low_lvl_trajectory=False,
             dense_interpolation=False,
-            interpolation_length=0
+            interpolation_length=0,
         )
         test_dataset = RLBenchDataset(
             root=self.args.valset,
@@ -139,12 +135,10 @@ class TrainTester(BaseTrainTester):
             max_episodes_per_task=self.args.max_episodes_per_task,
             cameras=self.args.cameras,
             training=False,
-            image_rescale=tuple(
-                float(x) for x in self.args.image_rescale.split(",")
-            ),
+            image_rescale=tuple(float(x) for x in self.args.image_rescale.split(",")),
             return_low_lvl_trajectory=False,
             dense_interpolation=False,
-            interpolation_length=0
+            interpolation_length=0,
         )
         return train_dataset, test_dataset
 
@@ -168,7 +162,7 @@ class TrainTester(BaseTrainTester):
             num_sampling_level=args.num_sampling_level,
             fine_sampling_ball_diameter=args.fine_sampling_ball_diameter,
             regress_position_offset=bool(args.regress_position_offset),
-            use_instruction=bool(args.use_instruction)
+            use_instruction=bool(args.use_instruction),
         )
         print("Model parameters:", count_parameters(_model))
 
@@ -186,7 +180,7 @@ class TrainTester(BaseTrainTester):
             position_offset_loss_coeff=args.position_offset_loss_coeff,
             rotation_loss_coeff=args.rotation_loss_coeff,
             gripper_loss_coeff=args.gripper_loss_coeff,
-            symmetric_rotation_loss=bool(args.symmetric_rotation_loss)
+            symmetric_rotation_loss=bool(args.symmetric_rotation_loss),
         )
 
     def train_one_step(self, model, criterion, optimizer, step_id, sample):
@@ -201,7 +195,9 @@ class TrainTester(BaseTrainTester):
             sample["instr"],
             sample["curr_gripper"],
             # Provide ground-truth action to bias ghost point sampling at training time
-            gt_action=sample["action"] if self.args.use_ground_truth_position_for_sampling_train else None
+            gt_action=(
+                sample["action"] if self.args.use_ground_truth_position_for_sampling_train else None
+            ),
         )
 
         # Backward pass
@@ -219,8 +215,7 @@ class TrainTester(BaseTrainTester):
             self.writer.add_scalar("train-loss/noise_mse", loss, step_id)
 
     @torch.no_grad()
-    def evaluate_nsteps(self, model, criterion, loader, step_id, val_iters,
-                        split='val'):
+    def evaluate_nsteps(self, model, criterion, loader, step_id, val_iters, split="val"):
         """Run a given number of evaluation steps."""
         values = {}
         device = next(model.parameters()).device
@@ -236,12 +231,9 @@ class TrainTester(BaseTrainTester):
                 sample["instr"],
                 sample["curr_gripper"],
                 # DO NOT provide ground-truth action to sample ghost points at validation time
-                gt_action=None
+                gt_action=None,
             )
-            losses = criterion.compute_metrics(
-                action,
-                sample
-            )
+            losses = criterion.compute_metrics(action, sample)
 
             # Gather global statistics
             for n, l in losses.items():
@@ -251,9 +243,7 @@ class TrainTester(BaseTrainTester):
                 values[key] = torch.cat([values[key], l.unsqueeze(0)])
 
         # Log all statistics
-        values = {
-            k: torch.as_tensor(v).mean().item() for k, v in values.items()
-        }
+        values = {k: torch.as_tensor(v).mean().item() for k, v in values.items()}
         if dist.get_rank() == 0:
             for key, val in values.items():
                 self.writer.add_scalar(key, val, step_id)
@@ -263,7 +253,7 @@ class TrainTester(BaseTrainTester):
             for key, value in values.items():
                 print(f"{key}: {value:.03f}")
 
-        return values.get('val-losses/action_mse', None)
+        return values.get("val-losses/action_mse", None)
 
 
 def keypose_collate_fn(batch):
@@ -273,7 +263,7 @@ def keypose_collate_fn(batch):
 
     ret_dict["task"] = []
     for item in batch:
-        ret_dict["task"] += item['task']
+        ret_dict["task"] += item["task"]
     return ret_dict
 
 
@@ -304,6 +294,7 @@ class LossAndMetrics:
         'gripper'
      }
     """
+
     def __init__(
         self,
         position_loss,
@@ -319,8 +310,10 @@ class LossAndMetrics:
     ):
         assert position_loss in ["mse", "ce", "ce+mse"]
         assert rotation_parametrization in [
-            "quat_from_top_ghost", "quat_from_query",
-            "6D_from_top_ghost", "6D_from_query"
+            "quat_from_top_ghost",
+            "quat_from_query",
+            "6D_from_top_ghost",
+            "6D_from_query",
         ]
         self.position_loss = position_loss
         self.rotation_parametrization = rotation_parametrization
@@ -353,10 +346,12 @@ class LossAndMetrics:
         if "quat" in self.rotation_parametrization:
             if self.symmetric_rotation_loss:
                 gt_quat_ = -gt_quat.clone()
-                quat_loss = F.mse_loss(pred["rotation"], gt_quat, reduction='none').mean(1)
-                quat_loss_ = F.mse_loss(pred["rotation"], gt_quat_, reduction='none').mean(1)
+                quat_loss = F.mse_loss(pred["rotation"], gt_quat, reduction="none").mean(1)
+                quat_loss_ = F.mse_loss(pred["rotation"], gt_quat_, reduction="none").mean(1)
                 select_mask = (quat_loss < quat_loss_).float()
-                losses['rotation'] = (select_mask * quat_loss + (1 - select_mask) * quat_loss_).mean()
+                losses["rotation"] = (
+                    select_mask * quat_loss + (1 - select_mask) * quat_loss_
+                ).mean()
             else:
                 losses["rotation"] = F.mse_loss(pred["rotation"], gt_quat)
 
@@ -365,41 +360,61 @@ class LossAndMetrics:
     def _compute_position_loss(self, pred, gt_position, losses):
         if self.position_loss == "mse":
             # Only used for original HiveFormer
-            losses["position_mse"] = F.mse_loss(pred["position"], gt_position) * self.position_loss_coeff
+            losses["position_mse"] = (
+                F.mse_loss(pred["position"], gt_position) * self.position_loss_coeff
+            )
 
         elif self.position_loss in ["ce", "ce+mse"]:
             # Select a normalized Gaussian ball around the ground-truth
             # as a proxy label for a soft cross-entropy loss
             l2_pyramid = []
             label_pyramid = []
-            for ghost_pcd_i in pred['ghost_pcd_pyramid']:
+            for ghost_pcd_i in pred["ghost_pcd_pyramid"]:
                 l2_i = ((ghost_pcd_i - gt_position.unsqueeze(-1)) ** 2).sum(1).sqrt()
                 label_i = torch.softmax(-l2_i / self.ground_truth_gaussian_spread, dim=-1).detach()
                 l2_pyramid.append(l2_i)
                 label_pyramid.append(label_i)
 
-            loss_layers = range(len(pred['ghost_pcd_masks_pyramid'][0])) if self.compute_loss_at_all_layers else [-1]
+            loss_layers = (
+                range(len(pred["ghost_pcd_masks_pyramid"][0]))
+                if self.compute_loss_at_all_layers
+                else [-1]
+            )
 
             for j in loss_layers:
                 for i, ghost_pcd_masks_i in enumerate(pred["ghost_pcd_masks_pyramid"]):
-                    losses[f"position_ce_level{i}"] = F.cross_entropy(
-                        ghost_pcd_masks_i[j], label_pyramid[i],
-                        label_smoothing=self.label_smoothing
-                    ).mean() * self.position_loss_coeff / len(pred["ghost_pcd_masks_pyramid"])
+                    losses[f"position_ce_level{i}"] = (
+                        F.cross_entropy(
+                            ghost_pcd_masks_i[j],
+                            label_pyramid[i],
+                            label_smoothing=self.label_smoothing,
+                        ).mean()
+                        * self.position_loss_coeff
+                        / len(pred["ghost_pcd_masks_pyramid"])
+                    )
 
             # Supervise offset from the ghost point's position to the predicted position
-            num_sampling_level = len(pred['ghost_pcd_masks_pyramid'])
+            num_sampling_level = len(pred["ghost_pcd_masks_pyramid"])
             if pred.get("fine_ghost_pcd_offsets") is not None:
-                if pred["ghost_pcd_pyramid"][-1].shape[-1] != pred["ghost_pcd_pyramid"][0].shape[-1]:
+                if (
+                    pred["ghost_pcd_pyramid"][-1].shape[-1]
+                    != pred["ghost_pcd_pyramid"][0].shape[-1]
+                ):
                     npts = pred["ghost_pcd_pyramid"][-1].shape[-1] // num_sampling_level
-                    pred_with_offset = (pred["ghost_pcd_pyramid"][-1] + pred["fine_ghost_pcd_offsets"])[:, :, -npts:]
+                    pred_with_offset = (
+                        pred["ghost_pcd_pyramid"][-1] + pred["fine_ghost_pcd_offsets"]
+                    )[:, :, -npts:]
                 else:
-                    pred_with_offset = (pred["ghost_pcd_pyramid"][-1] + pred["fine_ghost_pcd_offsets"])
+                    pred_with_offset = (
+                        pred["ghost_pcd_pyramid"][-1] + pred["fine_ghost_pcd_offsets"]
+                    )
                 losses["position_offset"] = F.mse_loss(
                     pred_with_offset,
-                    gt_position.unsqueeze(-1).repeat(1, 1, pred_with_offset.shape[-1])
+                    gt_position.unsqueeze(-1).repeat(1, 1, pred_with_offset.shape[-1]),
                 )
-                losses["position_offset"] *= (self.position_offset_loss_coeff * self.position_loss_coeff)
+                losses["position_offset"] *= (
+                    self.position_offset_loss_coeff * self.position_loss_coeff
+                )
 
             if self.position_loss == "ce":
                 # Clear gradient on pred["position"] to avoid a memory leak since we don't
@@ -407,8 +422,7 @@ class LossAndMetrics:
                 pred["position"] = pred["position"].detach()
             else:
                 losses["position_mse"] = (
-                    F.mse_loss(pred["position"], gt_position)
-                    * self.position_loss_coeff
+                    F.mse_loss(pred["position"], gt_position) * self.position_loss_coeff
                 )
 
     def compute_metrics(self, pred, sample):
@@ -426,7 +440,9 @@ class LossAndMetrics:
         metrics["mean/pos_l2_final<0.01"] = (final_pos_l2 < 0.01).to(dtype).mean()
 
         for i in range(len(pred["position_pyramid"])):
-            pos_l2_i = ((pred["position_pyramid"][i].squeeze(1) - outputs[:, :3]) ** 2).sum(1).sqrt()
+            pos_l2_i = (
+                ((pred["position_pyramid"][i].squeeze(1) - outputs[:, :3]) ** 2).sum(1).sqrt()
+            )
             metrics[f"mean/pos_l2_level{i}"] = pos_l2_i.to(dtype).mean()
 
         for task in np.unique(tasks):
@@ -448,9 +464,9 @@ class LossAndMetrics:
                 l1 = (pred["rotation"] - gt_quat).abs().sum(1)
                 l1_ = (pred["rotation"] - gt_quat_).abs().sum(1)
                 select_mask = (l1 < l1_).float()
-                l1 = (select_mask * l1 + (1 - select_mask) * l1_)
+                l1 = select_mask * l1 + (1 - select_mask) * l1_
             else:
-                l1 = ((pred["rotation"] - gt_quat).abs().sum(1))
+                l1 = (pred["rotation"] - gt_quat).abs().sum(1)
 
         metrics["mean/rot_l1"] = l1.to(dtype).mean()
         metrics["mean/rot_l1<0.05"] = (l1 < 0.05).to(dtype).mean()
@@ -465,7 +481,7 @@ class LossAndMetrics:
         return metrics
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     # Arguments
     args = Arguments().parse_args()
@@ -473,21 +489,18 @@ if __name__ == '__main__':
     print(args)
     print("-" * 100)
     if args.gripper_loc_bounds is None:
-        args.gripper_loc_bounds = np.array([[-2, -2, -2], [2, 2, 2]]) * 1.0
+        args.gripper_loc_bounds = np.array([[0, -2, 0], [2, 2, 1.5]]) * 1.0
     else:
         args.gripper_loc_bounds = get_gripper_loc_bounds(
             args.gripper_loc_bounds,
             task=args.tasks[0] if len(args.tasks) == 1 else None,
-            buffer=args.gripper_loc_bounds_buffer
+            buffer=args.gripper_loc_bounds_buffer,
         )
     log_dir = args.base_log_dir / args.exp_log_dir / args.run_log_dir
     args.log_dir = log_dir
     log_dir.mkdir(exist_ok=True, parents=True)
     print("Logging:", log_dir)
-    print(
-        "Available devices (CUDA_VISIBLE_DEVICES):",
-        os.environ.get("CUDA_VISIBLE_DEVICES")
-    )
+    print("Available devices (CUDA_VISIBLE_DEVICES):", os.environ.get("CUDA_VISIBLE_DEVICES"))
     print("Device count", torch.cuda.device_count())
     args.local_rank = int(os.environ["LOCAL_RANK"])
 
@@ -498,7 +511,7 @@ if __name__ == '__main__':
 
     # DDP initialization
     torch.cuda.set_device(args.local_rank)
-    torch.distributed.init_process_group(backend='nccl', init_method='env://')
+    torch.distributed.init_process_group(backend="nccl", init_method="env://")
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.deterministic = True

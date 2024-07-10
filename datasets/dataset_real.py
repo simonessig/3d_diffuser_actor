@@ -26,7 +26,7 @@ class RealDataset(RLBenchDataset):
         cache_size=0,
         max_episodes_per_task=100,
         num_iters=None,
-        cameras=("front"),
+        cameras=(),
         # for augmentations
         training=True,
         image_rescale=(1.0, 1.0),
@@ -143,19 +143,23 @@ class RealDataset(RLBenchDataset):
         )
 
         # Camera ids
-        if episode[3]:
+        if episode[3] and self._cameras:
             cameras = list(episode[3][0].keys())
             assert all(c in cameras for c in self._cameras)
             index = torch.tensor([cameras.index(c) for c in self._cameras])
             # Re-map states based on camera ids
             states = states[:, index]
 
-        # Split RGB and XYZ
-        rgbs = states[:, :, 0, :, 20:180, 20:180]
-        pcds = states[:, :, 1, :, 20:180, 20:180]
-        # print(states.shape)
-        # print(pcds)
-        rgbs = self._unnormalize_rgb(rgbs)
+        if self._cameras:
+            # Split RGB and XYZ
+            rgbs = states[:, :, 0, :, 20:180, 20:180]
+            pcds = states[:, :, 1, :, 20:180, 20:180]
+            # print(states.shape)
+            # print(pcds)
+            rgbs = self._unnormalize_rgb(rgbs)
+        else:
+            rgbs = torch.zeros_like(states[:, :, 0, :, :, :])
+            pcds = torch.zeros_like(states[:, :, 1, :, :, :])
 
         # Get action tensors for respective frame ids
         action = torch.cat([episode[2][i] for i in frame_ids])

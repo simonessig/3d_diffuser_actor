@@ -166,17 +166,14 @@ if __name__ == "__main__":
     print(args)
     print("-" * 100)
     if args.gripper_loc_bounds is None:
-        args.gripper_loc_bounds = np.array([[-2, -2, -2], [2, 2, 2]]) * 1.0
+        args.gripper_loc_bounds = np.array([[0, -2, 0], [2, 2, 1.5]]) * 1.0
     else:
         args.gripper_loc_bounds = get_gripper_loc_bounds(
             args.gripper_loc_bounds,
             task=args.tasks[0] if len(args.tasks) == 1 else None,
             buffer=args.gripper_loc_bounds_buffer,
         )
-    log_dir = args.base_log_dir / args.exp_log_dir / args.run_log_dir
-    args.log_dir = log_dir
-    log_dir.mkdir(exist_ok=True, parents=True)
-    print("Logging:", log_dir)
+
     print(
         "Available devices (CUDA_VISIBLE_DEVICES):",
         os.environ.get("CUDA_VISIBLE_DEVICES"),
@@ -184,16 +181,21 @@ if __name__ == "__main__":
     print("Device count", torch.cuda.device_count())
     args.local_rank = int(os.environ["LOCAL_RANK"])
 
+    run = wandb.init(
+        project=args.wandb_project,
+        group=args.wandb_group,
+        config=args.as_dict(),
+    )
+
+    log_dir = args.base_log_dir / args.exp_log_dir / run.name
+    args.log_dir = log_dir
+    log_dir.mkdir(exist_ok=True, parents=True)
+    print("Logging:", log_dir)
+
     # Seeds
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
-
-    wandb.init(
-        project=args.wandb_project,
-        group=args.wandb_group,
-        config=args,
-    )
 
     # DDP initialization
     torch.cuda.set_device(args.local_rank)
