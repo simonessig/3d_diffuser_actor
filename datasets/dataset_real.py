@@ -34,7 +34,7 @@ class RealDataset(RLBenchDataset):
         return_low_lvl_trajectory=False,
         dense_interpolation=False,
         interpolation_length=100,
-        relative_action=True,
+        relative_action=False,
     ):
         self._cache = {}
         self._cache_size = cache_size
@@ -152,8 +152,8 @@ class RealDataset(RLBenchDataset):
 
         if self._cameras:
             # Split RGB and XYZ
-            rgbs = states[:, :, 0, :, 20:180, 20:180]
-            pcds = states[:, :, 1, :, 20:180, 20:180]
+            rgbs = states[:, :, 0, :, :, :]
+            pcds = states[:, :, 1, :, :, :]
             # print(states.shape)
             # print(pcds)
             rgbs = self._unnormalize_rgb(rgbs)
