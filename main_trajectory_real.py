@@ -166,7 +166,7 @@ if __name__ == "__main__":
     print(args)
     print("-" * 100)
     if args.gripper_loc_bounds is None:
-        args.gripper_loc_bounds = np.array([[0, -2, 0], [2, 2, 1.5]]) * 1.0
+        args.gripper_loc_bounds = np.array([[0, -0.5, 0], [1.5, 0.5, 1.5]]) * 1.0
     else:
         args.gripper_loc_bounds = get_gripper_loc_bounds(
             args.gripper_loc_bounds,
@@ -183,7 +183,6 @@ if __name__ == "__main__":
 
     run = wandb.init(
         project=args.wandb_project,
-        group=args.wandb_group,
         config=args.as_dict(),
     )
 

@@ -201,8 +201,8 @@ class TrainTester(BaseTrainTester):
 
         # Log
         if dist.get_rank() == 0 and (step_id + 1) % self.args.val_freq == 0:
-            self.writer.add_scalar("lr", self.args.lr, step_id)
-            self.writer.add_scalar("train-loss/noise_mse", loss, step_id)
+            self.writer.add_scalar("lr", self.args.lr, step_id + 1)
+            self.writer.add_scalar("train-loss/noise_mse", loss, step_id + 1)
 
     @torch.no_grad()
     def evaluate_nsteps(self, model, criterion, loader, step_id, val_iters, split="val"):
@@ -251,35 +251,15 @@ class TrainTester(BaseTrainTester):
                     values[key] = torch.Tensor([]).to(device)
                 values[key] = torch.cat([values[key], l.unsqueeze(0)])
 
-            # Gather per-task statistics
-            # tasks = np.array(sample["task"])
-            # for n, l in losses_B.items():
-            #     for task in np.unique(tasks):
-            #         key = f"{split}-loss/{task}/{n}"
-            #         l_task = l[tasks == task].mean()
-            #         if key not in values:
-            #             values[key] = torch.Tensor([]).to(device)
-            #         values[key] = torch.cat([values[key], l_task.unsqueeze(0)])
-
-            # Generate visualizations
-            # if i == 0 and dist.get_rank() == 0 and step_id > -1:
-            #     viz_key = f"{split}-viz/viz"
-            #     viz = generate_visualizations(
-            #         action,
-            #         sample["trajectory"].to(device),
-            #         sample["trajectory_mask"].to(device),
-            #     )
-            #     self.writer.add_image(viz_key, viz, step_id)
-
         # Log all statistics
         values = self.synchronize_between_processes(values)
         values = {k: v.mean().item() for k, v in values.items()}
         if dist.get_rank() == 0:
             if step_id > -1:
                 for key, val in values.items():
-                    self.writer.add_scalar(key, val, step_id)
+                    self.writer.add_scalar(key, val, step_id + 1)
 
-            wandb.log(values)
+            wandb.log(values, step=step_id + 1)
 
         return values.get("val/traj_action_mse", None)
 

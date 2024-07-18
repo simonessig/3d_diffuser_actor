@@ -11,7 +11,7 @@ from PIL import Image
 from scipy.spatial.transform import Rotation
 from tqdm import tqdm
 
-from utils.utils_with_real import deproject, get_cam_info, keypoint_discovery
+from utils.utils_with_real import deproject, get_cam_info, keypoint_discovery, viz_pcd
 
 
 class Arguments(tap.Tap):
@@ -38,43 +38,13 @@ def load_episode(root_dir, episode, datas, args, cam_info):
     data_dir = root_dir / f"episode{episode}"
     img_dim = tuple(map(int, args.image_size.split(",")))
 
-    # sorted rgb images
-    rgb_dir = data_dir / "img" / "cam0_rgb"
-    rgb_path_gen = sorted(rgb_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
-
-    # unpack rgb images
-    # rgb = torch.empty((*img_dim, 3, 1))
-    rgb = []
-    for path in rgb_path_gen:
-        img = np.array(Image.open(path))
-        img = cv2.resize(img, img_dim)
-        img = img / 255.0 * 2 - 1  # map RGB to [-1, 1]
-        # rgb = torch.cat([rgb, torch.tensor(img)[:, :, :, None]], dim=3)
-        rgb.append(img)
-
-    # sorted depth images
-    depth_dir = data_dir / "img" / "cam0_d"
-    depth_path_gen = sorted(depth_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
-
-    # unpack depth images
-    # pcd = torch.empty((*img_dim, 3, 1))
-    pcd = []
-    for path in depth_path_gen:
-        img = np.array(Image.open(path)) / 1000
-        img = cv2.resize(img, img_dim)
-        depth = deproject(img, *cam_info).transpose(1, 0)
-        # viz_pcd(depth)
-        depth = np.reshape(depth, (*img_dim, 3))
-        # pcd = torch.cat([pcd, torch.tensor(depth)[:, :, :, None]], dim=3)
-        pcd.append(depth)
-
     ee_pos = torch.load(f"{data_dir}/ee_pos.pt").numpy()
     gripper_command = torch.load(f"{data_dir}/gripper_command.pt").numpy()
 
     # From quaternion to euler angles
     ee_euler = Rotation.from_quat(ee_pos[:, 3:7]).as_euler("xyz")
 
-    # Map gripper openess to [0, 1] TODO
+    # Map gripper openess to [0, 1]
     gripper_command = (gripper_command > 0).astype(np.float32)[:, None]
 
     proprio = list(
@@ -88,14 +58,40 @@ def load_episode(root_dir, episode, datas, args, cam_info):
         )
     )
 
+    # sorted rgb images
+    rgb_dir = data_dir / "img" / "cam0_rgb"
+    rgb_path_gen = sorted(rgb_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
+
+    # unpack rgb images
+    rgb = []
+    for path in rgb_path_gen:
+        img = np.array(Image.open(path))
+        img = cv2.resize(img, img_dim)
+        img = img / 255.0 * 2 - 1  # map RGB to [-1, 1]
+        rgb.append(img)
+
+    # sorted depth images
+    depth_dir = data_dir / "img" / "cam0_d"
+    depth_path_gen = sorted(depth_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
+
+    # unpack depth images
+    pcd = []
+    viz_pcds = []
+    for path in depth_path_gen:
+        img = np.array(Image.open(path)) / 1000
+        img = cv2.resize(img, img_dim)
+        depth = deproject(img, *cam_info).transpose(1, 0)
+        viz_pcds.append(depth)
+        depth = np.reshape(depth, (*img_dim, 3))
+        pcd.append(depth)
+
+    # viz_pcd(pcd=viz_pcds, rgb=rgb, proprio=proprio, cam_pos=cam_info[1][:-1, 3], idxs=[0, 2, 4])
+    # return
+
     # Put them into a dict
-    # datas["pcd"].append(*pcd)  # (*img_dim, 3)
-    # datas["rgb"].append(*rgb)  # (*img_dim, 3)
-    # datas["proprios"].append(*proprio)  # (8)
     datas["pcd"] += pcd  # (*img_dim, 3)
     datas["rgb"] += rgb  # (*img_dim, 3)
     datas["proprios"] += proprio  # (7,)
-    # datas["annotation_id"].append(ann_id)  # int
 
     return datas
 
@@ -187,7 +183,14 @@ def process_datas(datas, keyframe_inds):
 def main(args):
     episodes_dir = args.data_dir / args.task / "episodes"
     episodes = np.array([int(ep.stem[7:]) for ep in episodes_dir.glob("episode*")])
-    np.random.shuffle(episodes)
+
+    num_var = 0
+    while num_var != 2:
+        np.random.shuffle(episodes)
+        num_var = 0
+        for i in episodes[-4:]:
+            if i < 10:
+                num_var += 1
 
     train_len = int(len(episodes) * args.split)
     test_len = len(episodes) - train_len
@@ -197,9 +200,6 @@ def main(args):
     with open(cam_calib_file) as json_data:
         cam_calib = json.load(json_data)
     cam_info = get_cam_info(cam_calib[0])
-
-    print(episodes)
-    input()
 
     for ep_id, split in tqdm(zip(episodes, split_strings)):
         datas = {
@@ -216,7 +216,8 @@ def main(args):
         # _, keyframe_inds = keypoint_discovery(datas["proprios"])
 
         # Only keypoints are captured during demos
-        keyframe_inds = np.arange(len(datas["proprios"]))
+        # keyframe_inds = np.arange(len(datas["proprios"]))
+        keyframe_inds = np.array([2, 3, 4])
 
         # Construct save data
         state_dict = process_datas(datas, keyframe_inds)

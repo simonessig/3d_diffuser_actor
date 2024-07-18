@@ -95,8 +95,10 @@ def get_cam_info(calib):
     intrinsics.model = pyrealsense2.distortion.inverse_brown_conrady
 
     extrinsics = np.zeros((4, 4))
-    extrinsics[:3, :3] = np.array(calib["camera_base_ori"]).T
-    extrinsics[:3, 3] = -np.array(calib["camera_base_pos"])
+    extrinsics[:3, 0] = np.array(calib["camera_base_ori"])[:3, 2]
+    extrinsics[:3, 1] = np.array(calib["camera_base_ori"])[:3, 0]
+    extrinsics[:3, 2] = -np.array(calib["camera_base_ori"])[:3, 1]
+    extrinsics[:3, 3] = np.array(calib["camera_base_pos"])  # + [-0.035, 0.01, 0.08]
     extrinsics[3, 3] = 1.0
 
     return intrinsics, extrinsics
@@ -104,8 +106,7 @@ def get_cam_info(calib):
 
 def deproject(depth_img, intrinsics, extrinsics):
     h, w = depth_img.shape
-    v, u = np.meshgrid(np.arange(h), np.arange(w))
-    v, u = v.ravel(), u.ravel()
+    g = np.stack(np.meshgrid(np.arange(h), np.arange(w))).T.reshape((h * w, 2))
 
     w_factor = w / intrinsics.width
     h_factor = h / intrinsics.height
@@ -121,25 +122,55 @@ def deproject(depth_img, intrinsics, extrinsics):
     _intrinsics.model = intrinsics.model
 
     points = np.array(
-        [pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, i, depth_img[i]) for i in zip(v, u)]
+        [
+            pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, i, depth_img[i[0], i[1]])
+            for i in g
+        ]
     )
-    x, y, z = points.T
-    y = -y
+    z, y, x = points.T
 
-    ones = np.ones_like(z)
-    cam_pos = np.stack([x, y, z, ones], axis=0)
+    cam_pos = np.stack([x, y, -z, np.ones_like(z)], axis=0)
 
     world_pos = extrinsics @ cam_pos
     return world_pos[:3]
 
 
-def viz_pcd(pcd, cam_pos=None):
-    x = pcd[:, 0]
-    y = pcd[:, 1]
-    z = pcd[:, 2]
+def viz_pcd(pcd, rgb=None, proprio=None, cam_pos=None, idxs=None):
     fig = plt.figure(figsize=(8, 8))
-    ax = fig.add_subplot(111, projection="3d")
-    ax.scatter(x, y, z)
+
+    if idxs is None:
+        idxs = range(len(pcd))
+
+    for n, i in enumerate(idxs):
+        ax = fig.add_subplot(1, len(idxs), n + 1, projection="3d")
+        ax.set_xlim([0, 1])
+        ax.set_ylim([-0.5, 0.5])
+        ax.set_zlim([0, 1])
+        ax.scatter(0, 0, 0)
+
+        if rgb is not None:
+            colors = rgb[i].reshape(pcd[i].shape)
+            colors = (colors + 1) / 2
+
+            ax.scatter(pcd[i][:, 0], pcd[i][:, 1], pcd[i][:, 2], c=colors)
+        else:
+            ax.scatter(pcd[i][:, 0], pcd[i][:, 1], pcd[i][:, 2])
+
+        if proprio is not None:
+            ax.scatter(proprio[i][0], proprio[i][1], proprio[i][2], marker="X", c="g", s=400)
+
+        if cam_pos is not None:
+            # ax.scatter(cam_pos[0], cam_pos[1], cam_pos[2], c="r")
+            ax.quiver(
+                1.4216465041442194,
+                -0.012545208136006748,
+                0.8585146590952618,
+                -0.8373016909952649,
+                0.0031583298017489603,
+                -0.5467320213864694,
+                length=0.3,
+            )
+
     plt.show()
 
 
@@ -259,7 +290,6 @@ class Actioner:
 
         # Predict trajectory
         if self._predict_trajectory:
-            print("Predict Trajectory")
             fake_traj = torch.full([1, interpolation_length - 1, gripper.shape[-1]], 0).to(
                 rgbs.device
             )
@@ -274,7 +304,6 @@ class Actioner:
                 run_inference=True,
             )
         else:
-            print("Predict Keypose")
             fake_traj = torch.full([1, 1, gripper.shape[-1]], 0).to(rgbs.device)
             traj_mask = torch.full([1, 1], False).to(rgbs.device)
             output["action"] = self._policy(
@@ -286,8 +315,6 @@ class Actioner:
                 gripper[..., :7],
                 run_inference=True,
             )
-            # Hackish, assume self._policy is an instance of Act3D
-            # output["action"] = self._policy.prepare_action(pred)
 
         return output
 
