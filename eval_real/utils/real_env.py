@@ -12,7 +12,6 @@ from utils.utils_with_real import Actioner
 class RealEnv:
     def __init__(self, interface: EnvInterface) -> None:
         self.interface = interface
-        self.interface.connect()
 
     @torch.no_grad()
     def evaluate_task(
@@ -26,6 +25,7 @@ class RealEnv:
         num_history=0,
     ):
         device = actioner.device
+        self.interface.connect()
 
         rgbs = torch.Tensor([]).to(device)
         pcds = torch.Tensor([]).to(device)
@@ -67,13 +67,20 @@ class RealEnv:
 
             action = output["action"][0]
             action = action.detach().cpu().numpy()[0]
-            # print(action)
+
+            # action[0] -= 0.15
+            # if action[1] < 0:
+            #     action[1] += 0.35
+            # if action[1] > 0:
+            #     action[1] -= 0.35
+            # action[2] += 0.075
 
             act_euler = Rotation.from_quat(action[3:7]).as_euler("xyz")
             action = np.concatenate([action[:3], act_euler, [np.round(action[-1])]])
             actions.append(action)
 
-            self.interface.move(action)
+            action_quat = np.concatenate([action[:-1], [np.round(action[-1])]])
+            self.interface.move(action_quat)
 
         rgb, pcd, gripper = self.interface.get_obs()
         rgb = rgb.to(device)
@@ -82,7 +89,9 @@ class RealEnv:
 
         rgbs = torch.cat([rgbs, rgb.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
         pcds = torch.cat([pcds, pcd.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
-        grippers = torch.cat([grippers, gripper.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
+        grippers = (
+            torch.cat([grippers, gripper.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
+        )
         actions = np.array(actions)
 
         self.interface.close()
@@ -109,7 +118,9 @@ class RealEnv:
             ax.plot([x[i], x[i + 1]], [y[i], y[i + 1]], [z[i], z[i + 1]], color="g")
 
         ax.scatter(0, 0, 0, c="yellow")
-        ax.scatter(1.4216465041442194, -0.012545208136006748, 0.8585146590952618, c="red")
+        ax.scatter(
+            1.4216465041442194, -0.012545208136006748, 0.8585146590952618, c="red"
+        )
         plt.show()
 
     def draw_diff(self, grippers, actions):
