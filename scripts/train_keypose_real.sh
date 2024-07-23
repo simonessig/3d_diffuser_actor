@@ -15,13 +15,14 @@ diffusion_timesteps=100
 B=8
 C=120
 backbone=clip
-image_size="128,128"
+image_size="256,256"
 fps_subsampling_factor=3
-gripper_buffer=0.01
+gripper_loc_bounds=./tasks/real_loc_bounds.json
+gripper_buffer=0.0
 quaternion_format=wxyz
 
-train_iters=30000
-val_freq=600
+train_iters=60000
+val_freq=1200
 
 export PYTHONPATH=$(pwd):$PYTHONPATH
 
@@ -31,6 +32,7 @@ CUDA_LAUNCH_BLOCKING=1 torchrun --nproc_per_node 1 --master_port $RANDOM \
     --dataset $dataset \
     --valset $valset \
     --backbone $backbone \
+    --gripper_loc_bounds $gripper_loc_bounds \
     --gripper_loc_bounds_buffer $gripper_buffer \
     --image_size $image_size \
     --num_workers 1 \

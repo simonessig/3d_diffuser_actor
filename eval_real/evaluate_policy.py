@@ -13,9 +13,11 @@ import torch
 import wandb
 from diffuser_actor.trajectory_optimization.diffuser_actor import DiffuserActor
 from eval_real.utils.envs.ground_truth import GroundTruthInterface
-from eval_real.utils.envs.real_robot import RealRobotInterface
+
+# from eval_real.utils.envs.real_robot import RealRobotInterface
+from eval_real.utils.ig import InteractiveGuidance
 from eval_real.utils.real_env import RealEnv
-from online_evaluation_real_test.ig import InteractiveGuidance
+from utils.common_utils import get_gripper_loc_bounds
 from utils.utils_with_real import Actioner
 
 
@@ -37,9 +39,8 @@ class Arguments(tap.Tap):
     max_steps: int = 25
     test_model: str = "3d_diffuser_actor"
     collision_checking: int = 0
-    gripper_loc_bounds_file: str = None
+    gripper_loc_bounds: str = None
     gripper_loc_bounds_buffer: float = 0.04
-    single_task_gripper_loc_bounds: int = 0
     predict_trajectory: int = 0
 
     robot_ip: str = "10.10.10.210"
@@ -70,19 +71,6 @@ def load_models(args):
 
     print("Loading model from", args.checkpoint, flush=True)
 
-    # Gripper workspace is the union of workspaces for all tasks
-    if args.single_task_gripper_loc_bounds and len(args.tasks) == 1:
-        task = args.tasks[0]
-    else:
-        task = None
-    print("Gripper workspace")
-
-    # if args.gripper_loc_bounds is None:
-    # gripper_loc_bounds = np.array([[0, -2, 0], [2, 2, 1.5]]) * 1.0
-
-    gripper_loc_bounds = np.array([[0.5, -0.5, 0.1], [0.8, 0.5, 0.5]]) * 1.0
-
-    # gripper_loc_bounds = np.array([[0.3, -0.28, 0.1], [0.67, 0.28, 0.5]]) * 1.0
     ig = InteractiveGuidance(device)
 
     if args.test_model == "3d_diffuser_actor":
@@ -93,7 +81,7 @@ def load_models(args):
             num_vis_ins_attn_layers=args.num_vis_ins_attn_layers,
             use_instruction=bool(args.use_instruction),
             fps_subsampling_factor=args.fps_subsampling_factor,
-            gripper_loc_bounds=gripper_loc_bounds,
+            gripper_loc_bounds=args.gripper_loc_bounds,
             rotation_parametrization=args.rotation_parametrization,
             quaternion_format=args.quaternion_format,
             diffusion_timesteps=args.diffusion_timesteps,
@@ -127,6 +115,17 @@ if __name__ == "__main__":
     # Save results here
     os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
 
+    # gripper_loc_bounds = np.array([[0.3, -0.28, 0.1], [0.67, 0.28, 0.5]]) * 1.0
+
+    if args.gripper_loc_bounds is None:
+        args.gripper_loc_bounds = np.array([[0.3, -0.3, 0.1], [0.7, 0.3, 0.5]]) * 1.0
+    else:
+        args.gripper_loc_bounds = get_gripper_loc_bounds(
+            args.gripper_loc_bounds,
+            task=args.tasks[0] if len(args.tasks) == 1 else None,
+            buffer=args.gripper_loc_bounds_buffer,
+        )
+
     # Seeds
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -135,17 +134,16 @@ if __name__ == "__main__":
     # Load models
     model = load_models(args)
 
-    # ifc = GroundTruthInterface(
-    #     tuple(int(x) for x in args.image_size.split(",")),
-    #     Path(args.data_dir) / "calibration.json",
-    #     Path(args.data_dir) / "episodes/episode0",
-    # )
-
-    ifc = RealRobotInterface(
+    ifc = GroundTruthInterface(
         tuple(int(x) for x in args.image_size.split(",")),
         Path(args.data_dir) / "calibration.json",
-        # Path(args.data_dir) / "episodes/episode0",
+        Path(args.data_dir) / "episodes",
     )
+
+    # ifc = RealRobotInterface(
+    #     tuple(int(x) for x in args.image_size.split(",")),
+    #     Path(args.data_dir) / "calibration.json",
+    # )
 
     env = RealEnv(ifc)
 

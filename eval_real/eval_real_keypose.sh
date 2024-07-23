@@ -6,7 +6,10 @@ num_history=3
 diffusion_timesteps=100
 embedding_dim=120
 cameras="front"
+image_size="256,256"
 fps_subsampling_factor=3
+gripper_loc_bounds=./tasks/real_loc_bounds.json
+gripper_buffer=0.0
 
 data_dir=./data/real/raw/pick_box
 num_episodes=1
@@ -15,7 +18,7 @@ verbose=0
 seed=0
 max_steps=3
 
-checkpoint=train_logs/$main_dir/bumbling-dust-5/last.pth
+checkpoint=train_logs/$main_dir/good-resonance-7/last.pth
 
 robot_ip=10.10.10.210
 arm_port=50051
@@ -32,6 +35,7 @@ CUDA_LAUNCH_BLOCKING=1 python \
     --num_history $num_history \
     --test_model 3d_diffuser_actor \
     --cameras $cameras \
+    --image_size $image_size \
     --verbose $verbose \
     --action_dim 7 \
     --collision_checking 0 \
@@ -47,7 +51,8 @@ CUDA_LAUNCH_BLOCKING=1 python \
     --max_tries $max_tries \
     --max_steps $max_steps \
     --seed $seed \
-    --gripper_loc_bounds_buffer 0.04 \
+    --gripper_loc_bounds $gripper_loc_bounds \
+    --gripper_loc_bounds_buffer $gripper_buffer \
     --quaternion_format wxyz \
     --interpolation_length $interpolation_length \
     --dense_interpolation $dense_interpolation \

@@ -19,7 +19,7 @@ class Arguments(tap.Tap):
     seed: int = 2
     task: str = "pick_box"
     split: float = 0.8
-    image_size: str = "128,128"  # "256,256"
+    image_size: str = "256,256"
     output: Path = Path(__file__).parent.parent / "data/real/packaged"
 
 
@@ -66,6 +66,8 @@ def load_episode(root_dir, episode, datas, args, cam_info):
     rgb = []
     for path in rgb_path_gen:
         img = np.array(Image.open(path))
+        h, w = img.shape[0], img.shape[1]
+        img = img[:, int((w - h) / 2) : int((w + h) / 2)]  # crop to square
         img = cv2.resize(img, img_dim)
         img = img / 255.0 * 2 - 1  # map RGB to [-1, 1]
         rgb.append(img)
@@ -79,6 +81,8 @@ def load_episode(root_dir, episode, datas, args, cam_info):
     viz_pcds = []
     for path in depth_path_gen:
         img = np.array(Image.open(path)) / 1000
+        h, w = img.shape[0], img.shape[1]
+        img = img[:, int((w - h) / 2) : int((w + h) / 2)]  # crop to square
         img = cv2.resize(img, img_dim)
         depth = deproject(img, *cam_info).transpose(1, 0)
         viz_pcds.append(depth)

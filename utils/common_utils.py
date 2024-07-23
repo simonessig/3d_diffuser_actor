@@ -1,18 +1,21 @@
-import pickle
-from typing import Dict, Optional, Sequence
-from pathlib import Path
 import json
-import torch
-import numpy as np
+import pickle
+from pathlib import Path
+from typing import Dict, Optional, Sequence
 
+import numpy as np
+import torch
 
 Instructions = Dict[str, Dict[int, torch.Tensor]]
 
 
 def round_floats(o):
-    if isinstance(o, float): return round(o, 2)
-    if isinstance(o, dict): return {k: round_floats(v) for k, v in o.items()}
-    if isinstance(o, (list, tuple)): return [round_floats(x) for x in o]
+    if isinstance(o, float):
+        return round(o, 2)
+    if isinstance(o, dict):
+        return {k: round_floats(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [round_floats(x) for x in o]
     return o
 
 
@@ -29,9 +32,12 @@ def get_gripper_loc_bounds(path: str, buffer: float = 0.0, task: Optional[str] =
         gripper_loc_bounds = np.stack([gripper_loc_bounds_min, gripper_loc_bounds_max])
     else:
         # Gripper workspace is the union of workspaces for all tasks
-        gripper_loc_bounds = json.load(open(path, "r"))
-        gripper_loc_bounds_min = np.min(np.stack([bounds[0] for bounds in gripper_loc_bounds.values()]), axis=0) - buffer
-        gripper_loc_bounds_max = np.max(np.stack([bounds[1] for bounds in gripper_loc_bounds.values()]), axis=0) + buffer
+        gripper_loc_bounds_min = (
+            np.min(np.stack([bounds[0] for bounds in gripper_loc_bounds.values()]), axis=0) - buffer
+        )
+        gripper_loc_bounds_max = (
+            np.max(np.stack([bounds[1] for bounds in gripper_loc_bounds.values()]), axis=0) + buffer
+        )
         gripper_loc_bounds = np.stack([gripper_loc_bounds_min, gripper_loc_bounds_max])
     print("Gripper workspace size:", gripper_loc_bounds_max - gripper_loc_bounds_min)
     return gripper_loc_bounds
@@ -57,9 +63,7 @@ def load_instructions(
             data = {task: var_instr for task, var_instr in data.items() if task in tasks}
         if variations is not None:
             data = {
-                task: {
-                    var: instr for var, instr in var_instr.items() if var in variations
-                }
+                task: {var: instr for var, instr in var_instr.items() if var in variations}
                 for task, var_instr in data.items()
             }
         return data

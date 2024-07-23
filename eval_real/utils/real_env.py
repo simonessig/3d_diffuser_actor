@@ -27,78 +27,78 @@ class RealEnv:
         device = actioner.device
         self.interface.connect()
 
-        rgbs = torch.Tensor([]).to(device)
-        pcds = torch.Tensor([]).to(device)
-        grippers = torch.Tensor([]).to(device)
+        for i in [0, 10]:
+            self.interface.prepare(i)
 
-        actions = []
+            rgbs = torch.Tensor([]).to(device)
+            pcds = torch.Tensor([]).to(device)
+            grippers = torch.Tensor([]).to(device)
+            actions = []
 
-        for step_id in trange(max_steps):
+            for step_id in trange(max_steps):
+                rgb, pcd, gripper = self.interface.get_obs()
+                rgb = rgb.to(device)
+                pcd = pcd.to(device)
+                gripper = gripper.to(device)
+
+                rgbs = torch.cat([rgbs, rgb.unsqueeze(1)], dim=1)
+                pcds = torch.cat([pcds, pcd.unsqueeze(1)], dim=1)
+                grippers = torch.cat([grippers, gripper.unsqueeze(1)], dim=1)
+
+                # Prepare proprioception history
+                rgbs_input = rgbs[:, -1:][:, :, :3]
+                pcds_input = pcds[:, -1:]
+
+                if num_history < 1:
+                    gripper_input = grippers[:, -1]
+                else:
+                    gripper_input = grippers[:, -num_history:]
+                    npad = num_history - gripper_input.shape[1]
+                    gripper_input = F.pad(gripper_input, (0, 0, npad, 0), mode="replicate")
+
+                output = actioner.predict(
+                    rgbs_input,
+                    pcds_input,
+                    gripper_input,
+                    interpolation_length=interpolation_length,
+                )
+
+                if verbose:
+                    print(f"Step {step_id}")
+                    print(action)
+
+                action = output["action"][0]
+                action = action.detach().cpu().numpy()[0]
+
+                # action[0] -= 0.15
+                # if action[1] < 0:
+                #     action[1] += 0.35
+                # if action[1] > 0:
+                #     action[1] -= 0.35
+                # action[2] += 0.075
+
+                act_euler = Rotation.from_quat(action[3:7]).as_euler("xyz")
+                action = np.concatenate([action[:3], act_euler, [np.round(action[-1])]])
+                actions.append(action)
+
+                action_quat = np.concatenate([action[:-1], [np.round(action[-1])]])
+                self.interface.move(action_quat)
+
             rgb, pcd, gripper = self.interface.get_obs()
             rgb = rgb.to(device)
             pcd = pcd.to(device)
             gripper = gripper.to(device)
 
-            rgbs = torch.cat([rgbs, rgb.unsqueeze(1)], dim=1)
-            pcds = torch.cat([pcds, pcd.unsqueeze(1)], dim=1)
-            grippers = torch.cat([grippers, gripper.unsqueeze(1)], dim=1)
+            rgbs = torch.cat([rgbs, rgb.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
+            pcds = torch.cat([pcds, pcd.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
+            grippers = torch.cat([grippers, gripper.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
+            actions = np.array(actions)
 
-            # Prepare proprioception history
-            rgbs_input = rgbs[:, -1:][:, :, :3]
-            pcds_input = pcds[:, -1:]
+            # self.draw_actions_3D(actions)
 
-            if num_history < 1:
-                gripper_input = grippers[:, -1]
-            else:
-                gripper_input = grippers[:, -num_history:]
-                npad = num_history - gripper_input.shape[1]
-                gripper_input = F.pad(gripper_input, (0, 0, npad, 0), mode="replicate")
-
-            output = actioner.predict(
-                rgbs_input,
-                pcds_input,
-                gripper_input,
-                interpolation_length=interpolation_length,
-            )
-
-            if verbose:
-                print(f"Step {step_id}")
-                print(action)
-
-            action = output["action"][0]
-            action = action.detach().cpu().numpy()[0]
-
-            # action[0] -= 0.15
-            # if action[1] < 0:
-            #     action[1] += 0.35
-            # if action[1] > 0:
-            #     action[1] -= 0.35
-            # action[2] += 0.075
-
-            act_euler = Rotation.from_quat(action[3:7]).as_euler("xyz")
-            action = np.concatenate([action[:3], act_euler, [np.round(action[-1])]])
-            actions.append(action)
-
-            action_quat = np.concatenate([action[:-1], [np.round(action[-1])]])
-            self.interface.move(action_quat)
-
-        rgb, pcd, gripper = self.interface.get_obs()
-        rgb = rgb.to(device)
-        pcd = pcd.to(device)
-        gripper = gripper.to(device)
-
-        rgbs = torch.cat([rgbs, rgb.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
-        pcds = torch.cat([pcds, pcd.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
-        grippers = (
-            torch.cat([grippers, gripper.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
-        )
-        actions = np.array(actions)
+            self.draw_diff(grippers, actions)
 
         self.interface.close()
-
-        # self.draw_actions_3D(actions)
-
-        self.draw_diff(grippers, actions)
 
         print(f"Finished: {task_str}")
 
@@ -118,36 +118,34 @@ class RealEnv:
             ax.plot([x[i], x[i + 1]], [y[i], y[i + 1]], [z[i], z[i + 1]], color="g")
 
         ax.scatter(0, 0, 0, c="yellow")
-        ax.scatter(
-            1.4216465041442194, -0.012545208136006748, 0.8585146590952618, c="red"
-        )
+        ax.scatter(1.4216465041442194, -0.012545208136006748, 0.8585146590952618, c="red")
         plt.show()
 
     def draw_diff(self, grippers, actions):
-        fig = plt.figure(figsize=(30, 20))
+        fig = plt.figure(figsize=(12, 3))
         actions = np.concatenate((np.array([[None] * 7]), actions))
 
         ax_info = [
-            [1, "X", (0, 1.5)],
-            [2, "Y", (-1, 1)],
-            [3, "Z", (0, 1.5)],
-            [4, "Rot X", (-np.pi, np.pi)],
-            [5, "Rot Y", (-np.pi, np.pi)],
-            [6, "Rot Z", (-np.pi, np.pi)],
-            [8, "Gripper", (0, 1)],
+            [0, 1, "X", (0.3, 0.7)],
+            [1, 2, "Y", (-0.3, 0.3)],
+            [2, 3, "Z", (0.1, 0.5)],
+            # [3, 4, "Rot X", (-np.pi, np.pi)],
+            # [4, 5, "Rot Y", (-np.pi, np.pi)],
+            # [5, 6, "Rot Z", (-np.pi, np.pi)],
+            [6, 4, "Gripper", (0, 1)],
         ]
 
         axes = []
 
-        for i, info in enumerate(ax_info):
-            ax = fig.add_subplot(3, 3, info[0])
-            ax.set_title(info[1])
-            ax.set_ylim(*info[2])
-            ax.plot(grippers[:, i], label="Ground Truth")
-            ax.plot(actions[:, i], label="Prediction")
+        for info in ax_info:
+            ax = fig.add_subplot(1, 4, info[1])
+            ax.set_title(info[2])
+            ax.set_ylim(*info[3])
+            ax.plot(grippers[:, info[0]], label="Ground Truth")
+            ax.plot(actions[:, info[0]], label="Prediction")
             axes.append(ax)
 
-        axes[2].legend()
+        axes[3].legend()
 
         # # X
         # ax = fig.add_subplot(2, 3, 1)
