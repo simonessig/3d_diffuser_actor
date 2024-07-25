@@ -12,6 +12,7 @@ __pycache__
 ._.DS_Store
 *.pkl
 *.png
+*.gif
 *.mp4
 *.swp
 *.egg-info/
