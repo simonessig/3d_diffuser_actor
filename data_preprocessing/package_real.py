@@ -84,6 +84,8 @@ def load_episode(root_dir, episode, datas, args, cam_info):
         h, w = img.shape[0], img.shape[1]
         img = img[:, int((w - h) / 2) : int((w + h) / 2)]  # crop to square
         img = cv2.resize(img, img_dim)
+        img[img > 2] = 2.0
+        # img = cv2.medianBlur(img.astype(np.float32), 5)
         depth = deproject(img, *cam_info).transpose(1, 0)
         viz_pcds.append(depth)
         depth = np.reshape(depth, (*img_dim, 3))

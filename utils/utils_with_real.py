@@ -107,7 +107,7 @@ def get_cam_info(calib):
     offset[:3, 3] = np.array([-0.045, 0, 0.08])
     offset[3, 3] = 1.0
 
-    return intrinsics, offset @ extrinsics
+    return intrinsics, extrinsics
 
 
 def deproject(depth_img, intrinsics, extrinsics):
