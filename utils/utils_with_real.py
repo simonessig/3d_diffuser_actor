@@ -104,10 +104,10 @@ def get_cam_info(calib):
     offset = np.zeros((4, 4))
     mat = pytorch3d_transforms.euler_angles_to_matrix(torch.as_tensor([0, -0.1, 0]), "XYZ")
     offset[:3, :3] = mat.numpy()
-    offset[:3, 3] = np.array([-0.045, 0, 0.08])
+    offset[:3, 3] = np.array([0, 0, 0.08])
     offset[3, 3] = 1.0
 
-    return intrinsics, extrinsics
+    return intrinsics, offset @ extrinsics
 
 
 def deproject(depth_img, intrinsics, extrinsics):

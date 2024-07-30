@@ -27,7 +27,7 @@ class RealEnv:
         device = actioner.device
         self.interface.connect()
 
-        for i in [0, 10]:
+        for i in [1, 3, 11, 13, 22, 23]:
             self.interface.prepare(i)
 
             rgbs = torch.Tensor([]).to(device)

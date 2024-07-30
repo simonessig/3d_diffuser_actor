@@ -16,20 +16,20 @@ class GroundTruthInterface(EnvInterface):
     def prepare(self, episode):
         self._step = 0
 
-        self._ee_poses = torch.load(self._data_dir / f"episode{episode}" / "ee_pos.pt").numpy()
-        self._gripper_commands = torch.load(
-            self._data_dir / f"episode{episode}" / "gripper_command.pt"
-        ).numpy()
+        ep_dir = self._data_dir / "episodes" / f"var{int(episode > 12)}" / f"episode{episode}"
+
+        self._ee_poses = torch.load(ep_dir / "ee_pos.pt").numpy()
+        self._gripper_commands = torch.load(ep_dir / "gripper_command.pt").numpy()
 
         self._gripper_commands = (self._gripper_commands > 0).astype(np.float32)
 
-        rgb_dir = self._data_dir / f"episode{episode}" / "img" / "cam0_rgb"
+        rgb_dir = ep_dir / "img" / "cam0_rgb"
         rgb_path_gen = sorted(rgb_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
         self._rgb_imgs = []
         for path in rgb_path_gen:
             self._rgb_imgs.append(Image.open(path))
 
-        depth_dir = self._data_dir / f"episode{episode}" / "img" / "cam0_d"
+        depth_dir = ep_dir / "img" / "cam0_d"
         depth_path_gen = sorted(depth_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
         self._depth_imgs = []
         for path in depth_path_gen:
@@ -44,6 +44,4 @@ class GroundTruthInterface(EnvInterface):
         )
 
     def move(self, action: torch.tensor) -> None:
-        if self._step == 0:
-            self._step += 1
         self._step += 1

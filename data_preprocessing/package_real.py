@@ -16,14 +16,16 @@ from utils.utils_with_real import deproject, get_cam_info, keypoint_discovery, v
 
 class Arguments(tap.Tap):
     data_dir: Path = Path(__file__).parent.parent / "data/real/raw"
-    seed: int = 2
+    seed: int = 15
     task: str = "pick_box"
-    split: float = 0.8
+    split_train: float = 7
+    split_test: float = 3
+    split_val: float = 3
     image_size: str = "256,256"
     output: Path = Path(__file__).parent.parent / "data/real/packaged"
 
 
-def load_episode(root_dir, episode, datas, args, cam_info):
+def load_episode(data_dir, datas, args, cam_info):
     """Load episode and process datas
 
     Args:
@@ -35,7 +37,6 @@ def load_episode(root_dir, episode, datas, args, cam_info):
             - rgb: a list of nd.arrays with shape (height, width, 3)
             - proprios: a list of nd.arrays with shape (8,)
     """
-    data_dir = root_dir / f"episode{episode}"
     img_dim = tuple(map(int, args.image_size.split(",")))
 
     ee_pos = torch.load(f"{data_dir}/ee_pos.pt").numpy()
@@ -91,7 +92,7 @@ def load_episode(root_dir, episode, datas, args, cam_info):
         depth = np.reshape(depth, (*img_dim, 3))
         pcd.append(depth)
 
-    # viz_pcd(pcd=viz_pcds, rgb=rgb, proprio=proprio, cam_pos=cam_info[1][:-1, 3], idxs=[0, 2, 4])
+    # viz_pcd(pcd=viz_pcds, rgb=rgb, proprio=proprio, cam_pos=cam_info[1][:-1, 3], idxs=[0, 1])
     # return
 
     # Put them into a dict
@@ -188,26 +189,25 @@ def process_datas(datas, keyframe_inds):
 
 def main(args):
     episodes_dir = args.data_dir / args.task / "episodes"
-    episodes = np.array([int(ep.stem[7:]) for ep in episodes_dir.glob("episode*")])
+    data_dirs = np.array([[], []]).T
 
-    num_var = 0
-    while num_var != 2:
+    split_strings = np.array(
+        ["train"] * args.split_train + ["test"] * args.split_test + ["val"] * args.split_val
+    )
+
+    for var in episodes_dir.glob("var*"):
+        episodes = np.array([ep for ep in var.glob("episode*")])
         np.random.shuffle(episodes)
-        num_var = 0
-        for i in episodes[-4:]:
-            if i < 10:
-                num_var += 1
-
-    train_len = int(len(episodes) * args.split)
-    test_len = len(episodes) - train_len
-    split_strings = np.array(["train"] * train_len + ["test"] * test_len)
+        data_dirs = np.concatenate((data_dirs, np.stack((episodes, split_strings)).T), axis=0)
 
     cam_calib_file = args.data_dir / args.task / "calibration.json"
     with open(cam_calib_file) as json_data:
         cam_calib = json.load(json_data)
     cam_info = get_cam_info(cam_calib[0])
 
-    for ep_id, split in tqdm(zip(episodes, split_strings)):
+    for data_dir, split in tqdm(data_dirs):
+        ep_id = data_dir.stem[7:]
+
         datas = {
             "pcd": [],
             "rgb": [],
@@ -216,14 +216,14 @@ def main(args):
         }
 
         # Load data
-        load_episode(episodes_dir, ep_id, datas, args, cam_info)
+        load_episode(data_dir, datas, args, cam_info)
 
         # Get keypoints
         # _, keyframe_inds = keypoint_discovery(datas["proprios"])
 
         # Only keypoints are captured during demos
         # keyframe_inds = np.arange(len(datas["proprios"]))
-        keyframe_inds = np.array([2, 3, 4])
+        keyframe_inds = np.array([1, 2, 3])
 
         # Construct save data
         state_dict = process_datas(datas, keyframe_inds)

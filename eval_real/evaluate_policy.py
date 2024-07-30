@@ -136,8 +136,8 @@ if __name__ == "__main__":
 
     ifc = GroundTruthInterface(
         tuple(int(x) for x in args.image_size.split(",")),
-        Path(args.data_dir) / "calibration.json",
-        Path(args.data_dir) / "episodes",
+        Path(args.data_dir) / "raw" / args.tasks[0] / "calibration.json",
+        Path(args.data_dir / "raw" / f"{args.tasks[0]}"),
     )
 
     # ifc = RealRobotInterface(

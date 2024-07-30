@@ -11,14 +11,14 @@ fps_subsampling_factor=3
 gripper_loc_bounds=./tasks/real_loc_bounds.json
 gripper_buffer=0.0
 
-data_dir=./data/real/raw/pick_box
+data_dir=./data/real
 num_episodes=1
 max_tries=2
 verbose=0
 seed=0
 max_steps=3
 
-checkpoint=train_logs/$main_dir/good-resonance-7/last.pth
+checkpoint=train_logs/$main_dir/good-surf-11/last.pth
 
 robot_ip=10.10.10.210
 arm_port=50051
