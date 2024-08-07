@@ -1,5 +1,8 @@
 main_dir=real_keypose
 
+use_instruction=1
+instructions=instructions/real/pick_box/instructions.pkl
+
 dense_interpolation=1
 interpolation_length=5
 num_history=3
@@ -16,9 +19,9 @@ num_episodes=1
 max_tries=2
 verbose=0
 seed=0
-max_steps=3
+max_steps=4
 
-checkpoint=train_logs/$main_dir/good-surf-11/last.pth
+checkpoint=train_logs/$main_dir/good-galaxy-15/last.pth
 
 robot_ip=10.10.10.210
 arm_port=50051
@@ -45,8 +48,8 @@ CUDA_LAUNCH_BLOCKING=1 python \
     --data_dir $data_dir \
     --num_episodes $num_episodes \
     --output_file eval_logs/$main_dir/seed$seed/${tasks[$i]}.json \
-    --use_instruction 0 \
-    --instructions instructions/peract/instructions.pkl \
+    --use_instruction $use_instruction \
+    --instructions $instructions \
     --variations {0..0} \
     --max_tries $max_tries \
     --max_steps $max_steps \

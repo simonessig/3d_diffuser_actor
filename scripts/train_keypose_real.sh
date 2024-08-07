@@ -5,12 +5,15 @@ wandb_project=pdf_task_1
 dataset=./data/real/packaged/train
 valset=./data/real/packaged/test
 
+use_instruction=1
+instructions=instructions/real/pick_box/instructions.pkl
+
 cameras=front
 
 lr=1e-4
 dense_interpolation=1
 interpolation_length=2
-num_history=3
+num_history=2
 diffusion_timesteps=100
 B=8
 C=120
@@ -22,7 +25,7 @@ gripper_buffer=0.0
 quaternion_format=wxyz
 
 train_iters=60000
-val_freq=1200
+val_freq=600
 
 export PYTHONPATH=$(pwd):$PYTHONPATH
 
@@ -39,11 +42,12 @@ CUDA_LAUNCH_BLOCKING=1 torchrun --nproc_per_node 1 --master_port $RANDOM \
     --max_episode_length 3 \
     --train_iters $train_iters \
     --embedding_dim $C \
-    --use_instruction 0 \
+    --use_instruction $use_instruction \
+    --instructions $instructions \
     --rotation_parametrization 6D \
     --diffusion_timesteps $diffusion_timesteps \
     --val_freq $val_freq \
-    --val_iters 4 \
+    --val_iters 6 \
     --dense_interpolation $dense_interpolation \
     --interpolation_length $interpolation_length \
     --exp_log_dir $main_dir \

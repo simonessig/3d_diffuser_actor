@@ -20,12 +20,12 @@ class Arguments(tap.Tap):
     task: str = "pick_box"
     split_train: float = 7
     split_test: float = 3
-    split_val: float = 3
+    split_val: float = 2
     image_size: str = "256,256"
     output: Path = Path(__file__).parent.parent / "data/real/packaged"
 
 
-def load_episode(data_dir, datas, args, cam_info):
+def load_episode(data_dir, datas, args, cam_info, ann_id):
     """Load episode and process datas
 
     Args:
@@ -63,42 +63,51 @@ def load_episode(data_dir, datas, args, cam_info):
     rgb_dir = data_dir / "img" / "cam0_rgb"
     rgb_path_gen = sorted(rgb_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
 
-    # unpack rgb images
-    rgb = []
-    for path in rgb_path_gen:
-        img = np.array(Image.open(path))
-        h, w = img.shape[0], img.shape[1]
-        img = img[:, int((w - h) / 2) : int((w + h) / 2)]  # crop to square
-        img = cv2.resize(img, img_dim)
-        img = img / 255.0 * 2 - 1  # map RGB to [-1, 1]
-        rgb.append(img)
+    # sorted pointclouds
+    pcd_dir = data_dir / "img" / "cam0_pc"
+    pcd_path_gen = sorted(pcd_dir.glob("*.pt"), key=lambda x: int(x.name[:-3]))
 
-    # sorted depth images
-    depth_dir = data_dir / "img" / "cam0_d"
-    depth_path_gen = sorted(depth_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
+    rgbs = []
+    pcds = []
+    for rgb_path, pcd_path in zip(rgb_path_gen, pcd_path_gen):
+        rgb = np.array(Image.open(rgb_path))
+        pcd = torch.load(pcd_path).numpy()
 
-    # unpack depth images
-    pcd = []
-    viz_pcds = []
-    for path in depth_path_gen:
-        img = np.array(Image.open(path)) / 1000
-        h, w = img.shape[0], img.shape[1]
-        img = img[:, int((w - h) / 2) : int((w + h) / 2)]  # crop to square
-        img = cv2.resize(img, img_dim)
-        img[img > 2] = 2.0
-        # img = cv2.medianBlur(img.astype(np.float32), 5)
-        depth = deproject(img, *cam_info).transpose(1, 0)
-        viz_pcds.append(depth)
-        depth = np.reshape(depth, (*img_dim, 3))
-        pcd.append(depth)
+        h, w = rgb.shape[0], rgb.shape[1]
 
-    # viz_pcd(pcd=viz_pcds, rgb=rgb, proprio=proprio, cam_pos=cam_info[1][:-1, 3], idxs=[0, 1])
+        xa, xb, ya, yb = 0, 150, 280, 280
+
+        # crop to square
+        rgb = rgb[xa : h - xb, int((w - h) / 2) + ya : int((w + h) / 2) - yb]
+        pcd = pcd[xa : h - xb, int((w - h) / 2) + ya : int((w + h) / 2) - yb]
+
+        rgb = cv2.resize(rgb, img_dim)
+        pcd = cv2.resize(pcd, img_dim)
+
+        rgb = rgb / 255.0 * 2 - 1  # map RGB to [-1, 1]
+        pcd /= 1000  # mm to m
+
+        # camera extrinsics
+        pcd = np.reshape(pcd, (img_dim[0] * img_dim[1], 3))
+        y, z, x = pcd.T
+        cam_pos = np.stack([x, y, -z, np.ones_like(z)], axis=0)
+        pcd = cam_info[1] @ cam_pos
+        pcd = np.reshape(pcd[:3].T, (img_dim[0], img_dim[1], 3))
+
+        rgb[pcd[:, :, 0] < 0] = 0
+        pcd[pcd[:, :, 0] < 0] = 0
+
+        rgbs.append(rgb)
+        pcds.append(pcd)
+
+    # viz_pcd(pcd=pcds, rgb=rgbs, proprio=proprio, idxs=[0, 1])
     # return
 
     # Put them into a dict
-    datas["pcd"] += pcd  # (*img_dim, 3)
-    datas["rgb"] += rgb  # (*img_dim, 3)
+    datas["pcd"] += pcds  # (*img_dim, 3)
+    datas["rgb"] += rgbs  # (*img_dim, 3)
     datas["proprios"] += proprio  # (7,)
+    datas["annotation_id"].append(ann_id)  # int
 
     return datas
 
@@ -189,7 +198,7 @@ def process_datas(datas, keyframe_inds):
 
 def main(args):
     episodes_dir = args.data_dir / args.task / "episodes"
-    data_dirs = np.array([[], []]).T
+    data_dirs = np.array([[], [], []]).T
 
     split_strings = np.array(
         ["train"] * args.split_train + ["test"] * args.split_test + ["val"] * args.split_val
@@ -197,15 +206,18 @@ def main(args):
 
     for var in episodes_dir.glob("var*"):
         episodes = np.array([ep for ep in var.glob("episode*")])
+        ann_id = np.full_like(split_strings, var.stem[3:])
         np.random.shuffle(episodes)
-        data_dirs = np.concatenate((data_dirs, np.stack((episodes, split_strings)).T), axis=0)
+        data_dirs = np.concatenate(
+            (data_dirs, np.stack((episodes, split_strings, ann_id)).T), axis=0
+        )
 
     cam_calib_file = args.data_dir / args.task / "calibration.json"
     with open(cam_calib_file) as json_data:
         cam_calib = json.load(json_data)
     cam_info = get_cam_info(cam_calib[0])
 
-    for data_dir, split in tqdm(data_dirs):
+    for data_dir, split, ann_id in tqdm(data_dirs):
         ep_id = data_dir.stem[7:]
 
         datas = {
@@ -216,14 +228,10 @@ def main(args):
         }
 
         # Load data
-        load_episode(data_dir, datas, args, cam_info)
-
-        # Get keypoints
-        # _, keyframe_inds = keypoint_discovery(datas["proprios"])
+        load_episode(data_dir, datas, args, cam_info, ann_id)
 
         # Only keypoints are captured during demos
-        # keyframe_inds = np.arange(len(datas["proprios"]))
-        keyframe_inds = np.array([1, 2, 3])
+        keyframe_inds = np.array([1, 3, 4])
 
         # Construct save data
         state_dict = process_datas(datas, keyframe_inds)

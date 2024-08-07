@@ -57,11 +57,13 @@ class RealDataset(RLBenchDataset):
             )
 
         # Keep variations and useful instructions
-        self._instructions = instructions
+        self._instructions = defaultdict(dict)
         self._num_vars = Counter()  # variations of the same task
         for root, (task, var) in itertools.product(self._root, taskvar):
             data_dir = root / f"{task}+{var}"
             if data_dir.is_dir():
+                if instructions is not None:
+                    self._instructions[task][var] = instructions[task][var]
                 self._num_vars[task] += 1
 
         # If training, initialize augmentation classes
@@ -118,10 +120,6 @@ class RealDataset(RLBenchDataset):
         if episode is None:
             return None
 
-        # print(episode[1])
-        # sys.exit(0)
-        # return None
-
         # Dynamic chunking so as not to overload GPU memory
         chunk = random.randint(0, math.ceil(len(episode[0]) / self._max_episode_length) - 1)
 
@@ -165,10 +163,9 @@ class RealDataset(RLBenchDataset):
         action = torch.cat([episode[2][i] for i in frame_ids])
 
         # Sample one instruction feature
-        if self._instructions is not None:
-            instr_ind = episode[6][0]
-            instr = torch.as_tensor(self._instructions[instr_ind])
-            instr = instr.repeat(len(rgbs), 1, 1)
+        if self._instructions:
+            instr = random.choice(self._instructions[task][variation])
+            instr = instr[None].repeat(len(rgbs), 1, 1)
         else:
             instr = torch.zeros((rgbs.shape[0], 53, 512))
 

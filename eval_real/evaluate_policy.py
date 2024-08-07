@@ -134,6 +134,8 @@ if __name__ == "__main__":
     # Load models
     model = load_models(args)
 
+    # instruction = load_instructions(args.instructions)
+
     ifc = GroundTruthInterface(
         tuple(int(x) for x in args.image_size.split(",")),
         Path(args.data_dir) / "raw" / args.tasks[0] / "calibration.json",

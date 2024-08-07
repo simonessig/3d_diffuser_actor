@@ -102,9 +102,9 @@ def get_cam_info(calib):
     extrinsics[3, 3] = 1.0
 
     offset = np.zeros((4, 4))
-    mat = pytorch3d_transforms.euler_angles_to_matrix(torch.as_tensor([0, -0.1, 0]), "XYZ")
+    mat = pytorch3d_transforms.euler_angles_to_matrix(torch.as_tensor([0, -0.035, 0.035]), "XYZ")
     offset[:3, :3] = mat.numpy()
-    offset[:3, 3] = np.array([0, 0, 0.08])
+    offset[:3, 3] = np.array([0.01, 0.06, 0.08])
     offset[3, 3] = 1.0
 
     return intrinsics, offset @ extrinsics
@@ -136,12 +136,22 @@ def deproject(depth_img, intrinsics, extrinsics):
     z, y, x = points.T
 
     cam_pos = np.stack([x, y, -z, np.ones_like(z)], axis=0)
+    print(cam_pos.shape)
 
     world_pos = extrinsics @ cam_pos
     return world_pos[:3]
 
 
 def viz_pcd(pcd, rgb=None, proprio=None, cam_pos=None, idxs=None):
+    pcd = np.array(pcd)
+    rgb = np.array(rgb)
+
+    sh = np.array(pcd.shape)
+    sh = (sh[0], sh[1] * sh[2], sh[3])
+
+    pcd = np.reshape(pcd, sh)
+    rgb = np.reshape(rgb, sh)
+
     fig = plt.figure(figsize=(8, 8))
 
     if idxs is None:
