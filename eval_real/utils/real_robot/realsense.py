@@ -1,18 +1,21 @@
-import logging
 import time
+from typing import Tuple
 
 import cv2
+import einops
 import numpy as np
 import pyrealsense2 as rs
+import torch
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from utils.utils_with_real import deproject
 
 
 class Realsense:
-    def __init__(self, name: str):
+    def __init__(self, name: str, image_size, cam_info):
         self.name = name
         self.pipeline = None
+        self.image_size = image_size
+        self.cam_info = cam_info
 
     def connect(self) -> bool:
         print("Connecting to {}: ".format(self.name))
@@ -43,6 +46,32 @@ class Realsense:
         timestamp = time.time()
 
         return {"time": timestamp, "rgb": rgb_img, "depth": depth_img}
+
+    def get_obs(self) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
+        sensor_state = self.get_sensors()
+
+        rgb = np.array(sensor_state["rgb"])
+        h, w = rgb.shape[0], rgb.shape[1]
+        rgb = rgb[:, int((w - h) / 2) : int((w + h) / 2)]  # crop to square
+        rgb = cv2.resize(rgb, self.image_size)
+        rgb = rgb / 255.0 * 2 - 1  # map RGB to [-1, 1]
+        rgb = einops.rearrange(rgb, "h w d -> d h w")[None, None, :, :, :]
+
+        pcd = np.array(sensor_state["depth"]) / 1000
+        pcd = pcd[:, int((w - h) / 2) : int((w + h) / 2)]  # crop to square
+        pcd = cv2.resize(pcd, self.image_size)
+        pcd[pcd > 2] = 2.0
+        pcd = cv2.medianBlur(pcd.astype(np.float32), 5)
+        pcd = cv2.medianBlur(pcd.astype(np.float32), 5)
+        pcd = cv2.medianBlur(pcd.astype(np.float32), 5)
+        pcd = deproject(pcd, *self.cam_info).transpose(1, 0)
+        pcd = np.reshape(pcd, (*self.image_size, 3))
+        pcd = einops.rearrange(pcd, "h w d -> d h w")[None, None, :, :, :]
+
+        return (
+            torch.tensor(rgb, dtype=torch.float32),
+            torch.tensor(pcd, dtype=torch.float32),
+        )
 
     def close(self):
         self.pipeline.stop()

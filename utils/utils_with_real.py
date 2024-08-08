@@ -1,5 +1,6 @@
 import random
 
+import cv2
 import numpy as np
 import pyrealsense2
 import torch
@@ -8,6 +9,42 @@ from matplotlib import pyplot as plt
 from scipy.signal import argrelextrema
 
 import utils.pytorch3d_transforms as pytorch3d_transforms
+
+
+def process_kinect(rgb, pcd, img_dim, cam_info, depth=None):
+    h, w = rgb.shape[0], rgb.shape[1]
+
+    xa, xb, ya, yb = 0, 150, 230, 280
+
+    # crop to square
+    rgb = rgb[xa : h - xb, int((w - h) / 2) + ya : int((w + h) / 2) - yb]
+    pcd = pcd[xa : h - xb, int((w - h) / 2) + ya : int((w + h) / 2) - yb]
+
+    rgb = cv2.resize(rgb, img_dim)
+    pcd = cv2.resize(pcd, img_dim)
+
+    rgb = rgb / 255.0 * 2 - 1  # map RGB to [-1, 1]
+    pcd /= 1000  # mm to m
+
+    if depth is not None:
+        depth = depth[xa : h - xb, int((w - h) / 2) + ya : int((w + h) / 2) - yb]
+        depth = cv2.resize(depth, img_dim)
+        outliers = np.abs(depth - cv2.medianBlur(depth, 5)) > 10
+        pcd[outliers] = 0
+
+    # camera extrinsics
+    pcd = np.reshape(pcd, (img_dim[0] * img_dim[1], 3))
+    y, z, x = pcd.T
+    cam_pos = np.stack([x, y, -z, np.ones_like(z)], axis=0)
+    pcd = cam_info[1] @ cam_pos
+    pcd = np.reshape(pcd[:3].T, (img_dim[0], img_dim[1], 3))
+
+    rgb[pcd[:, :, 0] < 0] = 0
+    rgb[pcd[:, :, 0] > 0.8] = 0
+    pcd[pcd[:, :, 0] < 0] = 0
+    pcd[pcd[:, :, 0] > 0.8] = 0
+
+    return rgb, pcd
 
 
 def get_eef_velocity_from_trajectories(trajectories):
@@ -104,7 +141,7 @@ def get_cam_info(calib):
     offset = np.zeros((4, 4))
     mat = pytorch3d_transforms.euler_angles_to_matrix(torch.as_tensor([0, -0.035, 0.035]), "XYZ")
     offset[:3, :3] = mat.numpy()
-    offset[:3, 3] = np.array([0.01, 0.06, 0.08])
+    offset[:3, 3] = np.array([0.01, 0.05, 0.04])
     offset[3, 3] = 1.0
 
     return intrinsics, offset @ extrinsics
@@ -136,7 +173,7 @@ def deproject(depth_img, intrinsics, extrinsics):
     z, y, x = points.T
 
     cam_pos = np.stack([x, y, -z, np.ones_like(z)], axis=0)
-    print(cam_pos.shape)
+    # print(cam_pos.shape)
 
     world_pos = extrinsics @ cam_pos
     return world_pos[:3]

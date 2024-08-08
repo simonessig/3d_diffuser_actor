@@ -22,7 +22,7 @@ image_size="256,256"
 fps_subsampling_factor=3
 gripper_loc_bounds=./tasks/real_loc_bounds.json
 gripper_buffer=0.0
-quaternion_format=wxyz
+quaternion_format=xyzw
 
 train_iters=60000
 val_freq=600

@@ -2,22 +2,23 @@ import concurrent
 import time
 from typing import Tuple
 
+import numpy as np
 import torch
 from polymetis import GripperInterface  # type: ignore
 from polymetis import RobotInterface  # type: ignore
 
 from eval_real.utils.envs.env_interface import EnvInterface
+from eval_real.utils.real_robot.azure import Azure
 from eval_real.utils.real_robot.realsense import Realsense
 
 
 class RealRobotInterface(EnvInterface):
     def __init__(self, image_size, cam_calib_file) -> None:
         super().__init__(image_size, cam_calib_file)
-        self.robot = RobotInterface(
-            ip_address="10.10.10.210", enforce_version=False, port=50051
-        )
+        self.robot = RobotInterface(ip_address="10.10.10.210", enforce_version=False, port=50051)
         self.gripper = GripperInterface(ip_address="10.10.10.210", port=50052)
-        self.cam = Realsense("cam0")
+        self.cam = Azure("cam0", self.image_size, self.cam_info)
+        # self.cam = Realsense("cam0", self.image_size, self.cam_info)
 
         self.max_width = 0.0
         self.min_width = 0.0
@@ -25,6 +26,16 @@ class RealRobotInterface(EnvInterface):
         self.within_grasp_action = False
 
         self.pool = concurrent.futures.ThreadPoolExecutor(1)
+
+    def prepare(self, _):
+        self._grasp()
+        self._open()
+        self.robot.move_to_joint_positions(
+            [-0.1271, -0.0062, 0.1186, -2.2072, 0.0027, 2.1948, 0.7662]
+        )
+        # self._grasp()
+        # time.sleep(5)
+        # self._open()
 
     def connect(self) -> None:
         if self.gripper.metadata:
@@ -36,25 +47,24 @@ class RealRobotInterface(EnvInterface):
 
         # self.robot.go_home()
 
-        self.robot.move_to_joint_positions(
-            [-0.1271, -0.0062, 0.1186, -2.2072, 0.0027, 2.1948, 0.7662]
-        )
-
-        self._grasp()
-        self._open()
-
         self.cam.connect()
 
     def get_obs(self) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
+        rgb, pcd = self.cam.get_obs()
+
         ee_pos = torch.cat(self.robot.get_ee_pose())
 
         gripper_state = self.gripper.get_state()
         gripper_command = 0.0 if gripper_state.is_grasped else 1.0
 
-        sensor_state = self.cam.get_sensors()
+        ee_pos[3:7] += torch.tensor([0, 0.38, 0, 0])
+        ee_pos[3:7] = ee_pos[[6, 3, 4, 5]]
 
-        return self._prepare_obs(
-            sensor_state["rgb"], sensor_state["depth"], ee_pos, gripper_command
+        proprio = np.concatenate([ee_pos[:7], [gripper_command]])[None, :]
+        return (
+            rgb,
+            pcd,
+            torch.tensor(proprio, dtype=torch.float32),
         )
 
     def move(self, action) -> None:
@@ -66,8 +76,6 @@ class RealRobotInterface(EnvInterface):
             self._open()
         else:
             self._grasp()
-
-        print(act_pos)
 
         self.robot.move_to_ee_pose(act_pos, None)
 

@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-import tools.pytorch3d_transforms as pytorch3d_transforms
+import utils.pytorch3d_transforms as pytorch3d_transforms
 
 matplotlib.use("agg")
 matplotlib.rcParams["figure.dpi"] = 128
@@ -173,6 +173,7 @@ def get_gripper_matrix_from_action(action: torch.Tensor, rotation_param="quat_fr
 
     if "quat" in rotation_param:
         quaternion = action[..., 3:7]
+        # print(quaternion)
         rotation = pytorch3d_transforms.quaternion_to_matrix(quaternion)
     else:
         rotation = compute_rotation_matrix_from_ortho6d(action[..., 3:9])
@@ -295,12 +296,13 @@ def visualize_actions_and_point_clouds(
 
     fig.tight_layout()
     ax.legend(loc="lower center", ncol=len(gripper_pose_trajs))
-    ax.set_xlim(-1, 1)
-    ax.set_ylim(-1, 1)
-    ax.set_zlim(-1, 1)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(-0.5, 0.5)
+    ax.set_zlim(0, 1)
     images = []
     for elev, azim in zip(
-        [10, 15, 20, 25, 30, 25, 20, 15, 45, 90], [0, 45, 90, 135, 180, 225, 270, 315, 360, 360]
+        [10, 15, 20, 25, 30, 25, 20, 15, 45, 90],
+        [0, 45, 90, 135, 180, 225, 270, 315, 360, 360],
     ):
         ax.view_init(elev=elev, azim=azim, roll=0)
         canvas.draw()
@@ -310,7 +312,8 @@ def visualize_actions_and_point_clouds(
         image = cv2.resize(image, dsize=None, fx=0.75, fy=0.75)
         images.append(image)
     images = np.concatenate(
-        [np.concatenate(images[:5], axis=1), np.concatenate(images[5:10], axis=1)], axis=0
+        [np.concatenate(images[:5], axis=1), np.concatenate(images[5:10], axis=1)],
+        axis=0,
     )
     if save:
         Image.fromarray(images, mode="RGB").save("diff_traj.png")
@@ -323,7 +326,12 @@ def visualize_actions_and_point_clouds(
 
 
 def visualize_actions_and_point_clouds_video(
-    visible_pcd, visible_rgb, gt_pose, curr_pose, video=True, rotation_param="quat_from_query"
+    visible_pcd,
+    visible_rgb,
+    gt_pose,
+    curr_pose,
+    video=True,
+    rotation_param="quat_from_query",
 ):
     """Visualize by plotting the point clouds and gripper pose as video.
 
@@ -360,7 +368,11 @@ def visualize_actions_and_point_clouds_video(
         for img in images:
             pil_images.extend([Image.fromarray(img)] * 2)
         pil_images[0].save(
-            "keypose_frames.gif", save_all=True, append_images=pil_images[1:], duration=1, loop=0
+            "keypose_frames.gif",
+            save_all=True,
+            append_images=pil_images[1:],
+            duration=1,
+            loop=0,
         )
     else:
         for i, img in enumerate(images):

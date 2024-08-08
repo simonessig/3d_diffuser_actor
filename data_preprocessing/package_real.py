@@ -3,23 +3,21 @@ import pickle
 from pathlib import Path
 
 import blosc
-import cv2
 import numpy as np
 import tap
 import torch
 from PIL import Image
-from scipy.spatial.transform import Rotation
 from tqdm import tqdm
 
-from utils.utils_with_real import deproject, get_cam_info, keypoint_discovery, viz_pcd
+from utils.utils_with_real import get_cam_info, process_kinect, viz_pcd
 
 
 class Arguments(tap.Tap):
     data_dir: Path = Path(__file__).parent.parent / "data/real/raw"
     seed: int = 15
     task: str = "pick_box"
-    split_train: float = 7
-    split_test: float = 3
+    split_train: float = 8
+    split_test: float = 2
     split_val: float = 2
     image_size: str = "256,256"
     output: Path = Path(__file__).parent.parent / "data/real/packaged"
@@ -42,8 +40,8 @@ def load_episode(data_dir, datas, args, cam_info, ann_id):
     ee_pos = torch.load(f"{data_dir}/ee_pos.pt").numpy()
     gripper_command = torch.load(f"{data_dir}/gripper_command.pt").numpy()
 
-    # From quaternion to euler angles
-    ee_euler = Rotation.from_quat(ee_pos[:, 3:7]).as_euler("xyz")
+    ee_pos[:, 3:7] += np.array([0, 0.38, 0, 0])
+    ee_pos[:, 3:7] = ee_pos[:, [6, 3, 4, 5]]
 
     # Map gripper openess to [0, 1]
     gripper_command = (gripper_command > 0).astype(np.float32)[:, None]
@@ -51,8 +49,7 @@ def load_episode(data_dir, datas, args, cam_info, ann_id):
     proprio = list(
         np.concatenate(
             [
-                ee_pos[:, :3],
-                ee_euler,
+                ee_pos[:, :7],
                 gripper_command,
             ],
             axis=-1,
@@ -63,39 +60,22 @@ def load_episode(data_dir, datas, args, cam_info, ann_id):
     rgb_dir = data_dir / "img" / "cam0_rgb"
     rgb_path_gen = sorted(rgb_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
 
+    # sorted depth images
+    depth_dir = data_dir / "img" / "cam0_d"
+    depth_path_gen = sorted(depth_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
+
     # sorted pointclouds
     pcd_dir = data_dir / "img" / "cam0_pc"
     pcd_path_gen = sorted(pcd_dir.glob("*.pt"), key=lambda x: int(x.name[:-3]))
 
     rgbs = []
     pcds = []
-    for rgb_path, pcd_path in zip(rgb_path_gen, pcd_path_gen):
+    for rgb_path, depth_path, pcd_path in zip(rgb_path_gen, depth_path_gen, pcd_path_gen):
         rgb = np.array(Image.open(rgb_path))
+        depth = np.array(Image.open(depth_path))
         pcd = torch.load(pcd_path).numpy()
 
-        h, w = rgb.shape[0], rgb.shape[1]
-
-        xa, xb, ya, yb = 0, 150, 280, 280
-
-        # crop to square
-        rgb = rgb[xa : h - xb, int((w - h) / 2) + ya : int((w + h) / 2) - yb]
-        pcd = pcd[xa : h - xb, int((w - h) / 2) + ya : int((w + h) / 2) - yb]
-
-        rgb = cv2.resize(rgb, img_dim)
-        pcd = cv2.resize(pcd, img_dim)
-
-        rgb = rgb / 255.0 * 2 - 1  # map RGB to [-1, 1]
-        pcd /= 1000  # mm to m
-
-        # camera extrinsics
-        pcd = np.reshape(pcd, (img_dim[0] * img_dim[1], 3))
-        y, z, x = pcd.T
-        cam_pos = np.stack([x, y, -z, np.ones_like(z)], axis=0)
-        pcd = cam_info[1] @ cam_pos
-        pcd = np.reshape(pcd[:3].T, (img_dim[0], img_dim[1], 3))
-
-        rgb[pcd[:, :, 0] < 0] = 0
-        pcd[pcd[:, :, 0] < 0] = 0
+        rgb, pcd = process_kinect(rgb, pcd, img_dim, cam_info, depth=depth)
 
         rgbs.append(rgb)
         pcds.append(pcd)
@@ -106,7 +86,7 @@ def load_episode(data_dir, datas, args, cam_info, ann_id):
     # Put them into a dict
     datas["pcd"] += pcds  # (*img_dim, 3)
     datas["rgb"] += rgbs  # (*img_dim, 3)
-    datas["proprios"] += proprio  # (7,)
+    datas["proprios"] += proprio  # (8,)
     datas["annotation_id"].append(ann_id)  # int
 
     return datas

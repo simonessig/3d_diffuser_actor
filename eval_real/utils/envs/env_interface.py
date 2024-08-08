@@ -36,18 +36,26 @@ class EnvInterface(abc.ABC):
         self, rgb_img, depth_img, ee_pos, gripper_command
     ) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
         rgb = np.array(rgb_img)
+        h, w = rgb.shape[0], rgb.shape[1]
+        rgb = rgb[:, int((w - h) / 2) : int((w + h) / 2)]  # crop to square
         rgb = cv2.resize(rgb, self.image_size)
         rgb = rgb / 255.0 * 2 - 1  # map RGB to [-1, 1]
         rgb = einops.rearrange(rgb, "h w d -> d h w")[None, None, :, :, :]
+        # print(rgb)
 
         pcd = np.array(depth_img) / 1000
+        pcd = pcd[:, int((w - h) / 2) : int((w + h) / 2)]  # crop to square
         pcd = cv2.resize(pcd, self.image_size)
+        pcd[pcd > 2] = 2.0
+        pcd = cv2.medianBlur(pcd.astype(np.float32), 5)
+        pcd = cv2.medianBlur(pcd.astype(np.float32), 5)
+        pcd = cv2.medianBlur(pcd.astype(np.float32), 5)
         pcd = deproject(pcd, *self.cam_info).transpose(1, 0)
         pcd = np.reshape(pcd, (*self.image_size, 3))
         pcd = einops.rearrange(pcd, "h w d -> d h w")[None, None, :, :, :]
 
         # From quaternion to euler angles
-        ee_euler = Rotation.from_quat(ee_pos[3:7]).as_euler("xyz")
+        ee_euler = Rotation.from_quat([ee_pos[6], *ee_pos[3:6]]).as_euler("xyz")
 
         proprio = np.concatenate([ee_pos[:3], ee_euler, [gripper_command]])[None, :]
         return (

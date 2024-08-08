@@ -9,11 +9,10 @@ import torch
 
 from utils.utils_with_real import convert_rotation, to_relative_action
 
-from .dataset_engine import RLBenchDataset
 from .utils import Resize, TrajectoryInterpolator
 
 
-class RealDataset(RLBenchDataset):
+class RealDataset:
 
     def __init__(
         self,
@@ -34,7 +33,6 @@ class RealDataset(RLBenchDataset):
         return_low_lvl_trajectory=False,
         dense_interpolation=False,
         interpolation_length=100,
-        relative_action=False,
     ):
         self._cache = {}
         self._cache_size = cache_size
@@ -47,7 +45,6 @@ class RealDataset(RLBenchDataset):
         if isinstance(root, (Path, str)):
             root = [Path(root)]
         self._root = [Path(r).expanduser() for r in root]
-        self._relative_action = relative_action
 
         # For trajectory optimization, initialize interpolation tools
         if return_low_lvl_trajectory:
@@ -212,43 +209,6 @@ class RealDataset(RLBenchDataset):
             modals = self._resize(rgbs=rgbs, pcds=pcds)
             rgbs = modals["rgbs"]
             pcds = modals["pcds"]
-
-        # Compute relative action
-        if self._relative_action and traj is not None:
-            rel_traj = torch.zeros_like(traj)
-            for i in range(traj.shape[0]):
-                for j in range(traj.shape[1]):
-                    rel_traj[i, j] = torch.as_tensor(
-                        to_relative_action(traj[i, j].numpy(), traj[i, 0].numpy(), clip=False)
-                    )
-            traj = rel_traj
-
-        # Convert Euler angles to Quarternion
-        action = torch.cat(
-            [action[..., :3], torch.as_tensor(convert_rotation(action[..., 3:6])), action[..., 6:]],
-            dim=-1,
-        )
-        gripper = torch.cat(
-            [
-                gripper[..., :3],
-                torch.as_tensor(convert_rotation(gripper[..., 3:6])),
-                gripper[..., 6:],
-            ],
-            dim=-1,
-        )
-        gripper_history = torch.cat(
-            [
-                gripper_history[..., :3],
-                torch.as_tensor(convert_rotation(gripper_history[..., 3:6])),
-                gripper_history[..., 6:],
-            ],
-            dim=-1,
-        )
-        if traj is not None:
-            traj = torch.cat(
-                [traj[..., :3], torch.as_tensor(convert_rotation(traj[..., 3:6])), traj[..., 6:]],
-                dim=-1,
-            )
 
         ret_dict = {
             "task": [task for _ in frame_ids],
