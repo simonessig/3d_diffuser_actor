@@ -64,7 +64,7 @@ class Arguments(tap.Tap):
     max_episode_length: int = 5  # -1 for no limit
 
     # Data augmentations
-    image_rescale: str = "0.75,1.25"  # (min, max), "1.0,1.0" for no rescaling
+    image_rescale: str = "1.0,1.0"  # (min, max), "1.0,1.0" for no rescaling
 
     # Model
     backbone: str = "clip"  # one of "resnet", "clip"

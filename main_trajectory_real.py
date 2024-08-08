@@ -1,7 +1,6 @@
 """Main script for trajectory optimization."""
 
 import os
-import pickle
 import random
 
 import numpy as np
@@ -14,7 +13,7 @@ from datasets.dataset_real import RealDataset
 from main_trajectory import Arguments
 from main_trajectory import TrainTester as BaseTrainTester
 from main_trajectory import fig_to_numpy, traj_collate_fn
-from utils.common_utils import get_gripper_loc_bounds
+from utils.common_utils import get_gripper_loc_bounds, load_instructions
 
 
 class TrainTester(BaseTrainTester):
@@ -27,16 +26,17 @@ class TrainTester(BaseTrainTester):
     def get_datasets(self):
         """Initialize datasets."""
         # Load instruction, based on which we load tasks/variations
-        train_instruction = None
-        test_instruction = None
+        instruction = load_instructions(
+            self.args.instructions, self.args.tasks, self.args.variations
+        )
         taskvar = [
-            ("pick_box", 0),
+            (task, var) for task, var_instr in instruction.items() for var in var_instr.keys()
         ]
 
         # Initialize datasets with arguments
         train_dataset = RealDataset(
             root=self.args.dataset,
-            instructions=train_instruction,
+            instructions=instruction,
             taskvar=taskvar,
             max_episode_length=self.args.max_episode_length,
             cache_size=self.args.cache_size,
@@ -48,11 +48,10 @@ class TrainTester(BaseTrainTester):
             return_low_lvl_trajectory=True,
             dense_interpolation=bool(self.args.dense_interpolation),
             interpolation_length=self.args.interpolation_length,
-            relative_action=bool(self.args.relative_action),
         )
         test_dataset = RealDataset(
             root=self.args.valset,
-            instructions=test_instruction,
+            instructions=instruction,
             taskvar=taskvar,
             max_episode_length=self.args.max_episode_length,
             cache_size=self.args.cache_size_val,
@@ -63,7 +62,6 @@ class TrainTester(BaseTrainTester):
             return_low_lvl_trajectory=True,
             dense_interpolation=bool(self.args.dense_interpolation),
             interpolation_length=self.args.interpolation_length,
-            relative_action=bool(self.args.relative_action),
         )
         return train_dataset, test_dataset
 

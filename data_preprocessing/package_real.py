@@ -23,7 +23,7 @@ class Arguments(tap.Tap):
     output: Path = Path(__file__).parent.parent / "data/real/packaged"
 
 
-def load_episode(data_dir, datas, args, cam_info, ann_id):
+def load_episode(data_dir, datas, args, cam_info):
     """Load episode and process datas
 
     Args:
@@ -87,7 +87,7 @@ def load_episode(data_dir, datas, args, cam_info, ann_id):
     datas["pcd"] += pcds  # (*img_dim, 3)
     datas["rgb"] += rgbs  # (*img_dim, 3)
     datas["proprios"] += proprio  # (8,)
-    datas["annotation_id"].append(ann_id)  # int
+    datas["annotation_id"].append(0)  # int
 
     return datas
 
@@ -186,10 +186,10 @@ def main(args):
 
     for var in episodes_dir.glob("var*"):
         episodes = np.array([ep for ep in var.glob("episode*")])
-        ann_id = np.full_like(split_strings, var.stem[3:])
+        var_ids = np.full_like(split_strings, var.stem[3:])
         np.random.shuffle(episodes)
         data_dirs = np.concatenate(
-            (data_dirs, np.stack((episodes, split_strings, ann_id)).T), axis=0
+            (data_dirs, np.stack((episodes, split_strings, var_ids)).T), axis=0
         )
 
     cam_calib_file = args.data_dir / args.task / "calibration.json"
@@ -197,7 +197,7 @@ def main(args):
         cam_calib = json.load(json_data)
     cam_info = get_cam_info(cam_calib[0])
 
-    for data_dir, split, ann_id in tqdm(data_dirs):
+    for data_dir, split, var_id in tqdm(data_dirs):
         ep_id = data_dir.stem[7:]
 
         datas = {
@@ -208,7 +208,7 @@ def main(args):
         }
 
         # Load data
-        load_episode(data_dir, datas, args, cam_info, ann_id)
+        load_episode(data_dir, datas, args, cam_info)
 
         # Only keypoints are captured during demos
         keyframe_inds = np.array([1, 3, 4])
@@ -218,7 +218,7 @@ def main(args):
         # print(state_dict[4][0])
         # return
         # Save
-        taskvar_dir = args.output / split / f"{args.task}+0"
+        taskvar_dir = args.output / split / f"{args.task}+{var_id}"
         taskvar_dir.mkdir(parents=True, exist_ok=True)
         with open(taskvar_dir / f"ep{ep_id}.dat", "wb") as f:
             f.write(blosc.compress(pickle.dumps(state_dict)))

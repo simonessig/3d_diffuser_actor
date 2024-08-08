@@ -1,18 +1,17 @@
 import itertools
 import math
 import random
-import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
 import torch
 
-from utils.utils_with_real import convert_rotation, to_relative_action
+from datasets.dataset_engine import RLBenchDataset
 
 from .utils import Resize, TrajectoryInterpolator
 
 
-class RealDataset:
+class RealDataset(RLBenchDataset):
 
     def __init__(
         self,

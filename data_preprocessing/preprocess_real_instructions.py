@@ -2,15 +2,12 @@
 Precompute embeddings of instructions.
 """
 
-import itertools
 import json
-import os
 import pickle
 import re
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Tuple
 
-import numpy as np
 import tap
 import torch
 import transformers
@@ -24,8 +21,10 @@ class Arguments(tap.Tap):
     encoder: TextEncoder = "clip"
     model_max_length: int = 53
     device: str = "cuda"
-    verbose: bool = False
+    verbose: bool = True
     annotation_path: Path = "data/real/raw/pick_box/annotations.json"
+    tasks: Tuple[str, ...] = ["pick_box"]
+    variations: Tuple[int, ...] = [0, 1]
 
 
 def parse_int(s):
@@ -60,27 +59,35 @@ def main(args):
     with open(str(args.annotation_path), "r") as j:
         annotations = json.loads(j.read())
 
-    instructions_string = annotations["ann"]
-
     tokenizer = load_tokenizer(args.encoder)
     tokenizer.model_max_length = args.model_max_length
 
     model = load_model(args.encoder)
     model = model.to(args.device)
 
-    instructions = {"embeddings": [], "text": []}
+    instructions: Dict[str, Dict[int, torch.Tensor]] = {}
+    tasks = set(args.tasks)
 
-    for instr in tqdm(instructions_string):
-        tokens = tokenizer(instr, padding="max_length")["input_ids"]
+    for task in tasks:
+        instructions[task] = {}
 
-        tokens = torch.tensor(tokens).to(args.device)
-        tokens = tokens.view(1, -1)
-        with torch.no_grad():
-            pred = model(tokens).last_hidden_state
-        instructions["embeddings"].append(pred.cpu())
-        instructions["text"].append(instr)
+        for variation in args.variations:
+            instr: Optional[List[str]] = annotations[task][str(variation)]
 
-    os.makedirs(str(args.output.parent), exist_ok=True)
+            if args.verbose:
+                print(task, variation, instr)
+
+            tokens = tokenizer(instr, padding="max_length")["input_ids"]
+
+            tokens = torch.tensor(tokens).to(args.device)
+            tokens = tokens.view(1, -1)
+            with torch.no_grad():
+                pred = model(tokens).last_hidden_state
+            instructions[task][variation] = pred.cpu()
+
+    print("Instructions:", sum(len(inst) for inst in instructions.values()))
+
+    args.output.parent.mkdir(exist_ok=True)
     with open(args.output, "wb") as f:
         pickle.dump(instructions, f)
 
