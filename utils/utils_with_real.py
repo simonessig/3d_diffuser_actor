@@ -14,7 +14,7 @@ import utils.pytorch3d_transforms as pytorch3d_transforms
 def process_kinect(rgb, pcd, img_dim, cam_info, depth=None):
     h, w = rgb.shape[0], rgb.shape[1]
 
-    xa, xb, ya, yb = 0, 150, 230, 280
+    xa, xb, ya, yb = 0, 150, 210, 280
 
     # crop to square
     rgb = rgb[xa : h - xb, int((w - h) / 2) + ya : int((w + h) / 2) - yb]
@@ -141,7 +141,7 @@ def get_cam_info(calib):
     offset = np.zeros((4, 4))
     mat = pytorch3d_transforms.euler_angles_to_matrix(torch.as_tensor([0, -0.035, 0.035]), "XYZ")
     offset[:3, :3] = mat.numpy()
-    offset[:3, 3] = np.array([0.01, 0.05, 0.04])
+    offset[:3, 3] = np.array([-0.02, 0.05, 0.04])
     offset[3, 3] = 1.0
 
     return intrinsics, offset @ extrinsics
