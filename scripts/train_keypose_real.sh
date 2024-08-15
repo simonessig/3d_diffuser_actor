@@ -13,7 +13,7 @@ cameras=front
 lr=1e-4
 dense_interpolation=1
 interpolation_length=2
-num_history=2
+num_history=3
 diffusion_timesteps=100
 B=8
 C=120
@@ -24,8 +24,8 @@ gripper_loc_bounds=./tasks/real_loc_bounds.json
 gripper_buffer=0.0
 quaternion_format=xyzw
 
-train_iters=60000
-val_freq=600
+train_iters=100000
+val_freq=1000
 
 export PYTHONPATH=$(pwd):$PYTHONPATH
 
@@ -53,7 +53,7 @@ CUDA_LAUNCH_BLOCKING=1 torchrun --nproc_per_node 1 --master_port $RANDOM \
     --exp_log_dir $main_dir \
     --batch_size $B \
     --keypose_only 1 \
-    --variations {0..0} \
+    --variations {0..1} \
     --lr $lr \
     --num_history $num_history \
     --max_episodes_per_task -1 \

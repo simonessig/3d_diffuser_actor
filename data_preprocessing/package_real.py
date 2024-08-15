@@ -16,8 +16,8 @@ class Arguments(tap.Tap):
     data_dir: Path = Path(__file__).parent.parent / "data/real/raw"
     seed: int = 15
     task: str = "pick_box"
-    split_train: float = 8
-    split_test: float = 2
+    split_train: float = 7
+    split_test: float = 3
     split_val: float = 2
     image_size: str = "256,256"
     output: Path = Path(__file__).parent.parent / "data/real/packaged"
@@ -40,8 +40,8 @@ def load_episode(data_dir, datas, args, cam_info):
     ee_pos = torch.load(f"{data_dir}/ee_pos.pt").numpy()
     gripper_command = torch.load(f"{data_dir}/gripper_command.pt").numpy()
 
-    ee_pos[:, 3:7] += np.array([0, 0.38, 0, 0])
-    ee_pos[:, 3:7] = ee_pos[:, [6, 3, 4, 5]]
+    # ee_pos[:, 3:7] += np.array([0, 0.38, 0, 0])
+    # ee_pos[:, 3:7] = ee_pos[:, [6, 3, 4, 5]]
 
     # Map gripper openess to [0, 1]
     gripper_command = (gripper_command > 0).astype(np.float32)[:, None]
@@ -60,22 +60,17 @@ def load_episode(data_dir, datas, args, cam_info):
     rgb_dir = data_dir / "img" / "cam0_rgb"
     rgb_path_gen = sorted(rgb_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
 
-    # sorted depth images
-    depth_dir = data_dir / "img" / "cam0_d"
-    depth_path_gen = sorted(depth_dir.glob("*.png"), key=lambda x: int(x.name[:-4]))
-
     # sorted pointclouds
     pcd_dir = data_dir / "img" / "cam0_pc"
     pcd_path_gen = sorted(pcd_dir.glob("*.pt"), key=lambda x: int(x.name[:-3]))
 
     rgbs = []
     pcds = []
-    for rgb_path, depth_path, pcd_path in zip(rgb_path_gen, depth_path_gen, pcd_path_gen):
+    for rgb_path, pcd_path in zip(rgb_path_gen, pcd_path_gen):
         rgb = np.array(Image.open(rgb_path))
-        depth = np.array(Image.open(depth_path))
         pcd = torch.load(pcd_path).numpy()
 
-        rgb, pcd = process_kinect(rgb, pcd, img_dim, cam_info, depth=depth)
+        rgb, pcd = process_kinect(rgb, pcd, img_dim, cam_info)
 
         rgbs.append(rgb)
         pcds.append(pcd)

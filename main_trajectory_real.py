@@ -33,6 +33,9 @@ class TrainTester(BaseTrainTester):
             (task, var) for task, var_instr in instruction.items() for var in var_instr.keys()
         ]
 
+        if self.args.use_instruction == 0:
+            instruction = None
+
         # Initialize datasets with arguments
         train_dataset = RealDataset(
             root=self.args.dataset,
