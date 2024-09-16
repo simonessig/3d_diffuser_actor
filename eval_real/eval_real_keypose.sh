@@ -18,10 +18,10 @@ data_dir=./data/real
 num_episodes=1
 max_tries=2
 verbose=0
-seed=0
-max_steps=4
+seed=15
+max_steps=3
 
-checkpoint=train_logs/$main_dir/good-galaxy-15/last.pth
+checkpoint=train_logs/$main_dir/31-2.pth
 
 robot_ip=10.10.10.210
 arm_port=50051
@@ -56,7 +56,7 @@ CUDA_LAUNCH_BLOCKING=1 python \
     --seed $seed \
     --gripper_loc_bounds $gripper_loc_bounds \
     --gripper_loc_bounds_buffer $gripper_buffer \
-    --quaternion_format wxyz \
+    --quaternion_format xyzw \
     --interpolation_length $interpolation_length \
     --dense_interpolation $dense_interpolation \
     --device cuda \

@@ -57,9 +57,6 @@ class RealRobotInterface(EnvInterface):
         gripper_state = self.gripper.get_state()
         gripper_command = 0.0 if gripper_state.is_grasped else 1.0
 
-        ee_pos[3:7] += torch.tensor([0, 0.38, 0, 0])
-        ee_pos[3:7] = ee_pos[[6, 3, 4, 5]]
-
         proprio = np.concatenate([ee_pos[:7], [gripper_command]])[None, :]
         return (
             rgb,
@@ -72,12 +69,14 @@ class RealRobotInterface(EnvInterface):
         act_quat = action[3:7]
         act_grp = action[-1]
 
+        act_pos[:3] += np.array([-0.025, 0, 0])
+
+        self.robot.move_to_ee_pose(act_pos, act_quat)
+
         if act_grp > 0:
             self._open()
         else:
             self._grasp()
-
-        self.robot.move_to_ee_pose(act_pos, None)
 
     def close(self) -> None:
         self.cam.close()

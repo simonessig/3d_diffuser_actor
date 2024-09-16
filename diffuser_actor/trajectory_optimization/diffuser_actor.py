@@ -41,7 +41,7 @@ class DiffuserActor(nn.Module):
         nhist=3,
         relative=False,
         lang_enhanced=False,
-        ig=None,
+        guidance=None,
     ):
         super().__init__()
         self._rotation_parametrization = rotation_parametrization
@@ -76,7 +76,7 @@ class DiffuserActor(nn.Module):
         )
         self.n_steps = diffusion_timesteps
         self.gripper_loc_bounds = torch.tensor(gripper_loc_bounds)
-        self.ig = ig
+        self.guidance = guidance
 
     def encode_inputs(self, visible_rgb, visible_pcd, instruction, curr_gripper):
         # Compute visual features/positional embeddings at different scales
@@ -170,8 +170,8 @@ class DiffuserActor(nn.Module):
             )
             out = out[-1]  # keep only last layer's output
 
-            if self.ig is not None:
-                out = self.ig.apply(out, trajectory)
+            if self.guidance is not None:
+                out = self.guidance.apply(out[0], trajectory[0])[None, :]
 
             pos = self.position_noise_scheduler.step(
                 out[..., :3], t, trajectory[..., :3]

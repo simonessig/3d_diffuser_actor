@@ -10,6 +10,8 @@ from utils.utils_with_real import Actioner
 
 
 class RealEnv:
+    STEP_ID = 0
+
     def __init__(self, interface: EnvInterface) -> None:
         self.interface = interface
 
@@ -27,7 +29,7 @@ class RealEnv:
         device = actioner.device
         self.interface.connect()
 
-        for i in [1, 3, 11, 13, 22, 23]:
+        for i in [0, 1, 2]:
             self.interface.prepare(i)
 
             rgbs = torch.Tensor([]).to(device)
@@ -36,6 +38,7 @@ class RealEnv:
             actions = []
 
             for step_id in trange(max_steps):
+                RealEnv.STEP_ID = step_id
                 rgb, pcd, gripper = self.interface.get_obs()
                 rgb = rgb.to(device)
                 pcd = pcd.to(device)
@@ -69,34 +72,31 @@ class RealEnv:
 
                 action = output["action"][0]
                 action = action.detach().cpu().numpy()[0]
-
-                # action[0] -= 0.15
-                # if action[1] < 0:
-                #     action[1] += 0.35
-                # if action[1] > 0:
-                #     action[1] -= 0.35
-                # action[2] += 0.075
+                action[-1] = np.round(action[-1])
 
                 act_euler = Rotation.from_quat(action[3:7]).as_euler("xyz")
-                action = np.concatenate([action[:3], act_euler, [np.round(action[-1])]])
-                actions.append(action)
+                actions.append(np.concatenate([action[:3], act_euler, action[-1:]]))
 
-                action_quat = np.concatenate([action[:-1], [np.round(action[-1])]])
-                self.interface.move(action_quat)
+                self.interface.move(action)
 
-            rgb, pcd, gripper = self.interface.get_obs()
-            rgb = rgb.to(device)
-            pcd = pcd.to(device)
-            gripper = gripper.to(device)
+            # rgb, pcd, gripper = self.interface.get_obs()
+            # rgb = rgb.to(device)
+            # pcd = pcd.to(device)
+            # gripper = gripper.to(device)
 
-            rgbs = torch.cat([rgbs, rgb.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
-            pcds = torch.cat([pcds, pcd.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
-            grippers = torch.cat([grippers, gripper.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
-            actions = np.array(actions)
+            # rgbs = torch.cat([rgbs, rgb.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
+            # pcds = torch.cat([pcds, pcd.unsqueeze(1)], dim=1).detach().cpu().numpy()[0]
+            # grippers = (
+            #     torch.cat([grippers, gripper.unsqueeze(1)], dim=1)
+            #     .detach()
+            #     .cpu()
+            #     .numpy()[0]
+            # )
+            # actions = np.array(actions)
 
-            # self.draw_actions_3D(actions)
+            # # self.draw_actions_3D(actions)
 
-            self.draw_diff(grippers, actions)
+            # self.draw_diff(grippers, actions)
 
         self.interface.close()
 

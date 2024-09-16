@@ -83,9 +83,18 @@ class Azure:
         self.device_config.color_resolution = pykinect.K4A_COLOR_RESOLUTION_1080P
         self.device_config.depth_mode = pykinect.K4A_DEPTH_MODE_NFOV_UNBINNED
 
+    def get_intrinsics(self):
+        intrinsics = torch.zeros((3, 4), dtype=torch.float32)
+        intrinsics[0, 0] = self.device.calibration.color_params.fx
+        intrinsics[1, 1] = self.device.calibration.color_params.fy
+        intrinsics[0, 2] = self.device.calibration.color_params.cx
+        intrinsics[1, 2] = self.device.calibration.color_params.cy
+        intrinsics[2, 2] = 1
+        return intrinsics
+
 
 if __name__ == "__main__":
-    cam = Azure(device_id=0)
+    cam = Azure(name="0")
     cam.connect()
 
     for i in range(100):

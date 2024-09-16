@@ -9,16 +9,20 @@ from typing import Optional, Tuple
 import numpy as np
 import tap
 import torch
+from PIL import Image
 
+import interactive_guidance as ig
 import wandb
 from diffuser_actor.trajectory_optimization.diffuser_actor import DiffuserActor
 from eval_real.utils.envs.ground_truth import GroundTruthInterface
+from eval_real.utils.envs.real_robot import RealRobotInterface
 
-# from eval_real.utils.envs.real_robot import RealRobotInterface
-from eval_real.utils.ig import InteractiveGuidance
+# from eval_real.utils.ig import InteractiveGuidance
 from eval_real.utils.real_env import RealEnv
+from eval_real.utils.real_robot.azure import Azure
+from interactive_guidance.guides import PointGuide
 from utils.common_utils import get_gripper_loc_bounds
-from utils.utils_with_real import Actioner
+from utils.utils_with_real import Actioner, get_cam_info
 
 
 class Arguments(tap.Tap):
@@ -71,7 +75,32 @@ def load_models(args):
 
     print("Loading model from", args.checkpoint, flush=True)
 
-    ig = InteractiveGuidance(device)
+    guidance = ig.Guidance()
+
+    with open(Path(args.data_dir) / "calibration.json") as json_data:
+        cam_calib = json.load(json_data)
+    cam_info = get_cam_info(cam_calib[0])
+
+    cam = Azure("cam0", (640, 480), cam_info)
+    cam.connect()
+    img = cam.get_sensors()["rgb"]
+
+    intrinsics = cam.get_intrinsics()
+
+    pos = cam_info[1][:3, 3]
+    rot = cam_info[1][:3, :3]
+    rot = rot[[1, 2, 0]]
+
+    mask = ig.start_gui(Image.fromarray(img))
+    cam_guide = ig.CamGuide(mask, intrinsics, pos, rot, mask_only_frame=False, mult=5)
+    guidance.add(cam_guide)
+
+    # def point_cond():
+    #     # print(RealEnv.STEP_ID == 0)
+    #     return RealEnv.STEP_ID == 0
+
+    # point_guide = PointGuide(torch.tensor([0.45, 0.5, -0.1]), 1, mult=5, condition=point_cond)
+    # guidance.add(point_guide)
 
     if args.test_model == "3d_diffuser_actor":
         model = DiffuserActor(
@@ -88,7 +117,7 @@ def load_models(args):
             nhist=args.num_history,
             relative=bool(args.relative_action),
             lang_enhanced=bool(args.lang_enhanced),
-            # ig=ig,
+            guidance=guidance,
         ).to(device)
     else:
         raise NotImplementedError
@@ -136,16 +165,16 @@ if __name__ == "__main__":
 
     # instruction = load_instructions(args.instructions)
 
-    ifc = GroundTruthInterface(
-        tuple(int(x) for x in args.image_size.split(",")),
-        Path(args.data_dir) / "raw" / args.tasks[0] / "calibration.json",
-        Path(args.data_dir / "raw" / f"{args.tasks[0]}"),
-    )
-
-    # ifc = RealRobotInterface(
+    # ifc = GroundTruthInterface(
     #     tuple(int(x) for x in args.image_size.split(",")),
-    #     Path(args.data_dir) / "calibration.json",
+    #     Path(args.data_dir) / "raw" / args.tasks[0] / "calibration.json",
+    #     Path(args.data_dir / "raw" / f"{args.tasks[0]}"),
     # )
+
+    ifc = RealRobotInterface(
+        tuple(int(x) for x in args.image_size.split(",")),
+        Path(args.data_dir) / "calibration.json",
+    )
 
     env = RealEnv(ifc)
 
