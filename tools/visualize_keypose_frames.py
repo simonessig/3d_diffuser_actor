@@ -173,6 +173,7 @@ def get_gripper_matrix_from_action(action: torch.Tensor, rotation_param="quat_fr
 
     if "quat" in rotation_param:
         quaternion = action[..., 3:7]
+        quaternion = quaternion[..., [3, 0, 1, 2]]
         # print(quaternion)
         rotation = pytorch3d_transforms.quaternion_to_matrix(quaternion)
     else:

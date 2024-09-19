@@ -15,10 +15,10 @@ from utils.utils_with_real import get_cam_info, process_kinect, viz_pcd
 class Arguments(tap.Tap):
     data_dir: Path = Path(__file__).parent.parent / "data/real/raw"
     seed: int = 15
-    task: str = "pick_box"
-    split_train: float = 7
-    split_test: float = 3
-    split_val: float = 2
+    task: str = "pick_fruit"
+    split_train: float = 8
+    split_test: float = 2
+    split_val: float = 0
     image_size: str = "256,256"
     output: Path = Path(__file__).parent.parent / "data/real/packaged"
 
@@ -206,7 +206,7 @@ def main(args):
         load_episode(data_dir, datas, args, cam_info)
 
         # Only keypoints are captured during demos
-        keyframe_inds = np.array([1, 3, 4])
+        keyframe_inds = np.array([1, 3, 5])
 
         # Construct save data
         state_dict = process_datas(datas, keyframe_inds)

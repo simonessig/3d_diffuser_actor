@@ -1,12 +1,12 @@
 main_dir=real_keypose
 
-wandb_project=pdf_task_1
+wandb_project=pdf_task_2
 
 dataset=./data/real/packaged/train
 valset=./data/real/packaged/test
 
 use_instruction=1
-instructions=instructions/real/pick_box/instructions.pkl
+instructions=instructions/real/pick_fruit/instructions.pkl
 
 cameras=front
 
@@ -31,7 +31,7 @@ export PYTHONPATH=$(pwd):$PYTHONPATH
 
 CUDA_LAUNCH_BLOCKING=1 torchrun --nproc_per_node 1 --master_port $RANDOM \
     main_trajectory_real.py \
-    --tasks pick_box \
+    --tasks pick_fruit \
     --dataset $dataset \
     --valset $valset \
     --backbone $backbone \
@@ -47,19 +47,19 @@ CUDA_LAUNCH_BLOCKING=1 torchrun --nproc_per_node 1 --master_port $RANDOM \
     --rotation_parametrization 6D \
     --diffusion_timesteps $diffusion_timesteps \
     --val_freq $val_freq \
-    --val_iters 6 \
+    --val_iters 4 \
     --dense_interpolation $dense_interpolation \
     --interpolation_length $interpolation_length \
     --exp_log_dir $main_dir \
     --batch_size $B \
     --keypose_only 1 \
-    --variations {0..1} \
+    --variations {0..2} \
     --lr $lr \
     --num_history $num_history \
     --max_episodes_per_task -1 \
     --relative_action 0 \
     --fps_subsampling_factor $fps_subsampling_factor \
-    --lang_enhanced 0 \
+    --lang_enhanced 1 \
     --quaternion_format $quaternion_format \
     --wandb_project=$wandb_project \
     --cameras $cameras

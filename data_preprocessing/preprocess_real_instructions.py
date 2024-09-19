@@ -17,14 +17,14 @@ TextEncoder = Literal["bert", "clip"]
 
 
 class Arguments(tap.Tap):
-    output: Path = "instructions/real/pick_box/instructions.pkl"
+    output: Path = "instructions/real/pick_fruit/instructions.pkl"
     encoder: TextEncoder = "clip"
     model_max_length: int = 53
     device: str = "cuda"
     verbose: bool = True
-    annotation_path: Path = "data/real/raw/pick_box/annotations.json"
-    tasks: Tuple[str, ...] = ["pick_box"]
-    variations: Tuple[int, ...] = [0, 1]
+    annotation_path: Path = "data/real/raw/pick_fruit/annotations.json"
+    tasks: Tuple[str, ...] = ["pick_fruit"]
+    variations: Tuple[int, ...] = [0, 1, 2]
 
 
 def parse_int(s):

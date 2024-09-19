@@ -19,7 +19,7 @@ class RealDataset(RLBenchDataset):
         root,
         instructions=None,
         # dataset specification
-        taskvar=[("pick_box", 0)],
+        taskvar=[("pick_fruit", 0)],
         max_episode_length=5,
         cache_size=0,
         max_episodes_per_task=100,
