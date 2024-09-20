@@ -1,7 +1,7 @@
 main_dir=real_keypose
 
 use_instruction=1
-instructions=instructions/real/pick_box/instructions.pkl
+instructions=instructions/real/pick_fruit/instructions.pkl
 
 dense_interpolation=1
 interpolation_length=5
@@ -21,7 +21,7 @@ verbose=0
 seed=15
 max_steps=3
 
-checkpoint=train_logs/$main_dir/31-2.pth
+checkpoint=train_logs/$main_dir/1.pth
 
 robot_ip=10.10.10.210
 arm_port=50051
@@ -29,7 +29,7 @@ gripper_port=50052
 
 CUDA_LAUNCH_BLOCKING=1 python \
     eval_real/evaluate_policy.py \
-    --tasks pick_box \
+    --tasks pick_fruit \
     --checkpoint $checkpoint \
     --diffusion_timesteps $diffusion_timesteps \
     --fps_subsampling_factor $fps_subsampling_factor \

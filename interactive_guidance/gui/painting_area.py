@@ -47,9 +47,13 @@ class PaintingArea(tk.Canvas):
     @property
     def mask(self) -> torch.Tensor:
         disp_mask = einops.rearrange(torch.tensor(self._mask), "w h d -> 1 d w h")
+        print(disp_mask)
+        print(disp_mask.shape)
 
         interp_mask = self._upsampler(disp_mask)
         interp_mask = einops.rearrange(interp_mask, "1 d w h -> w h d")
+        print(interp_mask)
+        print(interp_mask.shape)
 
         mask = torch.zeros((*self._mask_size, 3))
         mask[:, :, :2] = interp_mask

@@ -62,9 +62,10 @@ class StaticGuide(Guide):
         self,
         callback: Callable[[torch.Tensor], torch.Tensor],
         mult: float = 1,
+        condition: Optional[Callable[[], bool]] = None,
         device: str = "cpu",
     ) -> None:
-        super().__init__(mult, None, device)
+        super().__init__(mult, condition, device)
         self._callback = callback
 
     def _get_score(self, x: torch.Tensor) -> torch.Tensor:

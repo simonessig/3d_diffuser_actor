@@ -112,7 +112,7 @@ def keypoint_discovery(trajectories, buffer_size=5):
     return keyframes, keyframe_inds
 
 
-def get_cam_info(calib):
+def get_cam_info(calib, offset=True):
     intrinsics = pyrealsense2.intrinsics()
     intrinsics.width = calib["intrinsics"]["width"]
     intrinsics.height = calib["intrinsics"]["height"]
@@ -130,13 +130,18 @@ def get_cam_info(calib):
     extrinsics[:3, 3] = np.array(calib["camera_base_pos"])
     extrinsics[3, 3] = 1.0
 
-    offset = np.zeros((4, 4))
-    mat = pytorch3d_transforms.euler_angles_to_matrix(torch.as_tensor([0.02, -0.46, -0.035]), "XYZ")
-    offset[:3, :3] = mat.numpy()
-    offset[:3, 3] = np.array([0.26, 0.16, -0.12])
-    offset[3, 3] = 1.0
+    if offset:
+        offset = np.zeros((4, 4))
+        mat = pytorch3d_transforms.euler_angles_to_matrix(
+            torch.as_tensor([0.02, -0.46, -0.035]), "XYZ"
+        )
+        offset[:3, :3] = mat.numpy()
+        offset[:3, 3] = np.array([0.26, 0.16, -0.12])
+        offset[3, 3] = 1.0
 
-    return intrinsics, offset @ extrinsics
+        return intrinsics, offset @ extrinsics
+
+    return intrinsics, extrinsics
 
 
 def deproject(depth_img, intrinsics, extrinsics):

@@ -29,7 +29,7 @@ class RealEnv:
         device = actioner.device
         self.interface.connect()
 
-        for i in [0, 1, 2]:
+        for i in range(10):
             self.interface.prepare(i)
 
             rgbs = torch.Tensor([]).to(device)
@@ -76,6 +76,15 @@ class RealEnv:
 
                 act_euler = Rotation.from_quat(action[3:7]).as_euler("xyz")
                 actions.append(np.concatenate([action[:3], act_euler, action[-1:]]))
+
+                if step_id == 1:
+                    action[2] += 0.02
+
+                if step_id != 2:
+                    action[0] += 0.01
+
+                if step_id == 2:
+                    action[2] += 0.03
 
                 self.interface.move(action)
 

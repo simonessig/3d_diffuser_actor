@@ -69,7 +69,7 @@ class RealRobotInterface(EnvInterface):
         act_quat = action[3:7]
         act_grp = action[-1]
 
-        act_pos[:3] += np.array([-0.025, 0, 0])
+        # act_pos[:3] += np.array([-0.025, 0, 0])
 
         self.robot.move_to_ee_pose(act_pos, act_quat)
 

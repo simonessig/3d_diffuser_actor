@@ -3,6 +3,7 @@
 import json
 import os
 import random
+import time
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -20,6 +21,7 @@ from eval_real.utils.envs.real_robot import RealRobotInterface
 # from eval_real.utils.ig import InteractiveGuidance
 from eval_real.utils.real_env import RealEnv
 from eval_real.utils.real_robot.azure import Azure
+from eval_real.utils.real_robot.realsense import Realsense
 from interactive_guidance.guides import PointGuide
 from utils.common_utils import get_gripper_loc_bounds
 from utils.utils_with_real import Actioner, get_cam_info
@@ -74,33 +76,70 @@ def load_models(args):
     device = torch.device(args.device)
 
     print("Loading model from", args.checkpoint, flush=True)
-
+    # time.sleep(5)
     guidance = ig.Guidance()
 
-    with open(Path(args.data_dir) / "calibration.json") as json_data:
-        cam_calib = json.load(json_data)
-    cam_info = get_cam_info(cam_calib[0])
+    # with open(Path(args.data_dir) / "calibration.json") as json_data:
+    #     cam_calib = json.load(json_data)
+    # cam_info = get_cam_info(cam_calib[0])
 
-    cam = Azure("cam0", (640, 480), cam_info)
-    cam.connect()
-    img = cam.get_sensors()["rgb"]
+    # cam = Azure("cam0", (640, 480), cam_info)
+    # cam.connect()
+    # img = cam.get_sensors()["rgb"]
 
-    intrinsics = cam.get_intrinsics()
+    # intrinsics = cam.get_intrinsics()
 
-    pos = cam_info[1][:3, 3]
-    rot = cam_info[1][:3, :3]
-    rot = rot[[1, 2, 0]]
+    # cam = Realsense("cam1", (640, 480), cam_info)
+    # cam.connect()
+    # img = cam.get_sensors()["rgb"][:, :, [2, 1, 0]]
 
-    mask = ig.start_gui(Image.fromarray(img))
-    cam_guide = ig.CamGuide(mask, intrinsics, pos, rot, mask_only_frame=False, mult=5)
-    guidance.add(cam_guide)
+    # intrinsics = torch.zeros((3, 4), dtype=torch.float32)
+    # intrinsics[0, 0] = cam_info[0].fx
+    # intrinsics[1, 1] = cam_info[0].fy
+    # intrinsics[0, 2] = cam_info[0].ppx
+    # intrinsics[1, 2] = cam_info[0].ppy
+    # intrinsics[2, 2] = 1
 
-    # def point_cond():
-    #     # print(RealEnv.STEP_ID == 0)
-    #     return RealEnv.STEP_ID == 0
+    # pos = cam_info[1][:3, 3]
+    # rot = cam_info[1][:3, :3]
+    # rot = rot[[1, 2, 0]]
+
+    def point_cond():
+        # print(RealEnv.STEP_ID == 0)
+        return RealEnv.STEP_ID != 2
+
+    # llm_mask = None
+    # while llm_mask is None or input("Again? ") == "y":
+    #     llm_mask = ig.make_llm_mask(
+    #         Image.fromarray(img),
+    #         "The robot can pick up the lemon or the orange. Pick up the right fruit.",
+    #         True,
+    #     )
+
+    # llm_guide = ig.CamGuide(
+    #     llm_mask, intrinsics, pos, rot, mask_only_frame=False, mult=5, condition=point_cond
+    # )
+    # guidance.add(llm_guide)
+
+    # person_guide = ig.PersonGuide(condition=point_cond)
+    # guidance.add(person_guide)
+
+    # mask = ig.start_gui(Image.fromarray(img))
+    # cam_guide = ig.CamGuide(mask, intrinsics, pos, rot, mask_only_frame=False, mult=5)
+    # guidance.add(cam_guide)
 
     # point_guide = PointGuide(torch.tensor([0.45, 0.5, -0.1]), 1, mult=5, condition=point_cond)
     # guidance.add(point_guide)
+    # return
+
+    def static_call(x):
+        zeros = torch.zeros_like(x)
+        ones = torch.zeros_like(x)
+        ones[:, 1] = -1
+        return torch.where(x >= 0, ones, zeros)
+
+    static_guide = ig.StaticGuide(static_call, mult=5, condition=point_cond)
+    guidance.add(static_guide)
 
     if args.test_model == "3d_diffuser_actor":
         model = DiffuserActor(
